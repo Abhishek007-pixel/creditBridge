@@ -1,3 +1,5 @@
 {
-    "creditbridge": "agents/registries/creditbridge.hocon"
+    "creditbridge": true
 }
+
+

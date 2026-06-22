@@ -1,13 +1,14 @@
 """
 CreditBridge Agent Runner
-Handles communication between FastAPI and the Neuro SAN agent network.
+Bridges FastAPI routes and the Neuro SAN agent network.
 
-Two modes:
-  USE_AGENTS=true  → runs real Neuro SAN pipeline
-  USE_AGENTS=false → runs synthetic fallback (always works, good for demo)
+Two modes controlled by USE_AGENTS env var:
+  true  — real Neuro SAN pipeline (requires API key)
+  false — synthetic fallback (always works, no key needed)
 
-The synthetic fallback is kept permanently as a safety net.
+The synthetic fallback is ALWAYS available as a safety net.
 If the agent pipeline fails for any reason, it falls back automatically.
+This means the demo NEVER breaks.
 """
 import os
 import sys
@@ -17,10 +18,19 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Add parent directory to path so coded tools can import from data/
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Ensure backend root is on path
+_runner_dir = os.path.dirname(os.path.abspath(__file__))
+_backend_root = os.path.abspath(os.path.join(_runner_dir, ".."))
+if _backend_root not in sys.path:
+    sys.path.insert(0, _backend_root)
 
-from config import USE_AGENTS, AGENT_MANIFEST_FILE, AGENT_TOOL_PATH, MISTRAL_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, AGENT_MODEL_NAME
+from config import (
+    USE_AGENTS,
+    AGENT_MANIFEST_FILE,
+    AGENT_TOOL_PATH,
+    AGENT_MODEL_NAME,
+    get_active_api_key,
+)
 from data.synthetic_generator import (
     generate_applicant_data,
     score_phone_bill,
@@ -36,47 +46,44 @@ from database import get_agent_weights
 
 def run_synthetic_pipeline(
     applicant_id: str,
-    consented_sources: list[str],
-    questionnaire_answers: list[int],
+    consented_sources: list,
+    questionnaire_answers: list,
 ) -> dict:
     """
-    Synthetic scoring pipeline — always works, deterministic.
-    Used when USE_AGENTS=false or as fallback if agent pipeline fails.
+    Pure synthetic scoring pipeline.
+    Always deterministic, always works, no API key needed.
+    Used when USE_AGENTS=false or as automatic fallback.
     """
     weights = get_agent_weights()
     data = generate_applicant_data(applicant_id)
-
     agent_scores = {}
 
     if "phone_bill" in consented_sources:
-        score, reason = score_phone_bill(data["phone_bill"])
-        agent_scores["phone_bill"] = (score, reason)
+        s, r = score_phone_bill(data["phone_bill"])
+        agent_scores["phone_bill"] = (s, r)
 
     if "ecommerce" in consented_sources:
-        score, reason = score_ecommerce(data["ecommerce"])
-        agent_scores["ecommerce"] = (score, reason)
+        s, r = score_ecommerce(data["ecommerce"])
+        agent_scores["ecommerce"] = (s, r)
 
     if "geolocation" in consented_sources:
-        score, reason = score_geolocation(data["geolocation"])
-        agent_scores["geolocation"] = (score, reason)
+        s, r = score_geolocation(data["geolocation"])
+        agent_scores["geolocation"] = (s, r)
 
-    # Psychometric always runs (questionnaire, not a data API)
-    score, reason = score_psychometric(questionnaire_answers)
-    agent_scores["psychometric"] = (score, reason)
+    # Psychometric always runs
+    s, r = score_psychometric(questionnaire_answers)
+    agent_scores["psychometric"] = (s, r)
 
     if "merchant" in consented_sources:
-        score, reason = score_merchant(data["merchant"])
-        agent_scores["merchant"] = (score, reason)
+        s, r = score_merchant(data["merchant"])
+        agent_scores["merchant"] = (s, r)
 
     if "cashflow" in consented_sources:
-        score, reason = score_cashflow(data["cashflow"])
-        agent_scores["cashflow"] = (score, reason)
+        s, r = score_cashflow(data["cashflow"])
+        agent_scores["cashflow"] = (s, r)
 
-    # Ensure psychometric weight is always active
-    all_active = list(agent_scores.keys())
-    active_weights = {k: v for k, v in weights.items() if k in all_active}
-
-    result = calculate_final_score(agent_scores, active_weights, all_active)
+    active_weights = {k: v for k, v in weights.items() if k in agent_scores}
+    result = calculate_final_score(agent_scores, active_weights, list(agent_scores.keys()))
     result["pipeline_mode"] = "synthetic"
     result["applicant_id"] = applicant_id
     return result
@@ -84,76 +91,95 @@ def run_synthetic_pipeline(
 
 async def run_agent_pipeline(
     applicant_id: str,
-    consented_sources: list[str],
-    questionnaire_answers: list[int],
+    consented_sources: list,
+    questionnaire_answers: list,
 ) -> dict:
     """
-    Neuro SAN agent pipeline.
-    Starts the agent server, calls credit_coordinator, returns result.
-    Falls back to synthetic if anything fails.
+    Neuro SAN agent pipeline (real LLM).
+    Falls back to synthetic automatically on any failure.
     """
     if not USE_AGENTS:
-        logger.info("USE_AGENTS=false, using synthetic pipeline")
+        logger.info("USE_AGENTS=false — using synthetic pipeline")
         return run_synthetic_pipeline(applicant_id, consented_sources, questionnaire_answers)
 
-    has_key = MISTRAL_API_KEY or OPENAI_API_KEY or GEMINI_API_KEY
-    if not has_key:
-        logger.warning("No LLM API key (Mistral/OpenAI/Gemini) set, falling back to synthetic pipeline")
-        return run_synthetic_pipeline(applicant_id, consented_sources, questionnaire_answers)
+    env_var_name, api_key = get_active_api_key()
+    if not api_key:
+        logger.warning("No LLM API key found — falling back to synthetic pipeline")
+        result = run_synthetic_pipeline(applicant_id, consented_sources, questionnaire_answers)
+        result["pipeline_mode"] = "synthetic_no_key"
+        return result
 
     try:
-        # Set environment variables for Neuro SAN
-        if MISTRAL_API_KEY:
-            os.environ["MISTRAL_API_KEY"] = MISTRAL_API_KEY
-        if OPENAI_API_KEY:
-            os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
-        if GEMINI_API_KEY:
-            os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
-        if AGENT_MODEL_NAME:
-            os.environ["AGENT_MODEL_NAME"] = AGENT_MODEL_NAME
+        # Set API key in environment for Neuro SAN
+        os.environ[env_var_name] = api_key
+
+        # Set GOOGLE_API_KEY as alias if using Gemini
+        if "gemini" in AGENT_MODEL_NAME.lower():
+            os.environ["GOOGLE_API_KEY"] = api_key
 
         os.environ["AGENT_MANIFEST_FILE"] = AGENT_MANIFEST_FILE
         os.environ["AGENT_TOOL_PATH"] = AGENT_TOOL_PATH
 
-        # Import Neuro SAN client
-        from neuro_san.client.agent_session import AgentSession
-
-        session = AgentSession(
-            agent_name="creditbridge",
-            connection_type="direct",
-        )
-
-        # Build the prompt for the coordinator
+        # Build prompt for the coordinator
         prompt = json.dumps({
             "applicant_id": applicant_id,
             "consented_sources": consented_sources,
             "questionnaire_answers": questionnaire_answers,
-        })
+        }, ensure_ascii=False)
 
-        response = session.chat(prompt)
+        logger.info(f"Starting Neuro SAN pipeline for applicant {applicant_id}")
+        logger.info(f"Model: {AGENT_MODEL_NAME}, Manifest: {AGENT_MANIFEST_FILE}")
 
-        # Parse response
-        if isinstance(response, str):
-            # Try to extract JSON from response
+        # Import Neuro SAN — use direct_agent_session_factory (v0.6.x API)
+        from neuro_san.client.direct_agent_session_factory import DirectAgentSessionFactory
+
+        import asyncio
+        from neuro_san.client.streaming_input_processor import StreamingInputProcessor
+
+        factory = DirectAgentSessionFactory()
+        session = factory.create_session(
+            agent_name="creditbridge",
+        )
+
+        input_processor = StreamingInputProcessor(session=session)
+        processor = input_processor.get_message_processor()
+        request = input_processor.formulate_chat_request(prompt)
+
+        def run_sync_chat():
+            for chat_response in session.streaming_chat(request):
+                message = chat_response.get("response", {})
+                processor.process_message(message, chat_response.get("type"))
+            return processor.get_compiled_answer()
+
+        response_text = await asyncio.to_thread(run_sync_chat)
+
+
+        # Parse JSON from response
+        if isinstance(response_text, dict):
+            result = response_text
+        else:
             import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            json_match = re.search(r'\{[\s\S]*\}', str(response_text))
             if json_match:
                 result = json.loads(json_match.group())
             else:
-                raise ValueError("Could not extract JSON from agent response")
-        elif isinstance(response, dict):
-            result = response
-        else:
-            raise ValueError(f"Unexpected response type: {type(response)}")
+                raise ValueError(f"No JSON found in agent response: {str(response_text)[:200]}")
 
         result["pipeline_mode"] = "neuro_san"
         result["applicant_id"] = applicant_id
-        logger.info(f"Agent pipeline completed for {applicant_id}, score={result.get('final_score')}")
+        logger.info(f"Neuro SAN pipeline complete. Score: {result.get('final_score')}")
+        return result
+
+    except ImportError as e:
+        logger.error(f"Neuro SAN import error: {e}")
+        result = run_synthetic_pipeline(applicant_id, consented_sources, questionnaire_answers)
+        result["pipeline_mode"] = "synthetic_fallback"
+        result["fallback_reason"] = f"import_error: {str(e)}"
         return result
 
     except Exception as e:
-        logger.error(f"Agent pipeline failed: {e}. Falling back to synthetic.")
+        logger.error(f"Neuro SAN pipeline failed: {e}. Falling back to synthetic.")
         result = run_synthetic_pipeline(applicant_id, consented_sources, questionnaire_answers)
         result["pipeline_mode"] = "synthetic_fallback"
-        result["fallback_reason"] = str(e)
+        result["fallback_reason"] = str(e)[:200]
         return result

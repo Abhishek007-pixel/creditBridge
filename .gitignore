@@ -1,0 +1,39 @@
+# Virtual Environment
+backend/venv/
+venv/
+.venv/
+ENV/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+**/__pycache__/
+
+# Environment Variables (contains secrets!)
+.env
+backend/.env
+frontend/.env
+*.env
+*.env.local
+
+# Databases
+*.db
+backend/creditbridge.db
+backend/nss_local.db
+
+# Logs and Results
+backend/logs/
+backend/results/
+logs/
+results/
+
+# IDE / System files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
