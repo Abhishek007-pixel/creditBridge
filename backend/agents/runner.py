@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Add parent directory to path so coded tools can import from data/
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import USE_AGENTS, AGENT_MANIFEST_FILE, AGENT_TOOL_PATH, MISTRAL_API_KEY
+from config import USE_AGENTS, AGENT_MANIFEST_FILE, AGENT_TOOL_PATH, MISTRAL_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, AGENT_MODEL_NAME
 from data.synthetic_generator import (
     generate_applicant_data,
     score_phone_bill,
@@ -96,13 +96,22 @@ async def run_agent_pipeline(
         logger.info("USE_AGENTS=false, using synthetic pipeline")
         return run_synthetic_pipeline(applicant_id, consented_sources, questionnaire_answers)
 
-    if not MISTRAL_API_KEY:
-        logger.warning("No MISTRAL_API_KEY set, falling back to synthetic pipeline")
+    has_key = MISTRAL_API_KEY or OPENAI_API_KEY or GEMINI_API_KEY
+    if not has_key:
+        logger.warning("No LLM API key (Mistral/OpenAI/Gemini) set, falling back to synthetic pipeline")
         return run_synthetic_pipeline(applicant_id, consented_sources, questionnaire_answers)
 
     try:
         # Set environment variables for Neuro SAN
-        os.environ["MISTRAL_API_KEY"] = MISTRAL_API_KEY
+        if MISTRAL_API_KEY:
+            os.environ["MISTRAL_API_KEY"] = MISTRAL_API_KEY
+        if OPENAI_API_KEY:
+            os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+        if GEMINI_API_KEY:
+            os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
+        if AGENT_MODEL_NAME:
+            os.environ["AGENT_MODEL_NAME"] = AGENT_MODEL_NAME
+
         os.environ["AGENT_MANIFEST_FILE"] = AGENT_MANIFEST_FILE
         os.environ["AGENT_TOOL_PATH"] = AGENT_TOOL_PATH
 

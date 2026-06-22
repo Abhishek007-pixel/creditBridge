@@ -244,7 +244,7 @@
         # ================================================================
         {
             "name": "PhoneBillScoringTool",
-            "class": "coded_tools.creditbridge.phone_bill_tool.PhoneBillScoringTool",
+            "class": "agents.coded_tools.creditbridge.phone_bill_tool.PhoneBillScoringTool",
             "function": {
                 "description": "Fetches phone bill payment history for an applicant from the synthetic data generator.",
                 "parameters": {
@@ -259,7 +259,7 @@
 
         {
             "name": "EcommerceScoringTool",
-            "class": "coded_tools.creditbridge.ecommerce_tool.EcommerceScoringTool",
+            "class": "agents.coded_tools.creditbridge.ecommerce_tool.EcommerceScoringTool",
             "function": {
                 "description": "Fetches e-commerce purchase behavior data for an applicant.",
                 "parameters": {
@@ -274,7 +274,7 @@
 
         {
             "name": "GeolocationScoringTool",
-            "class": "coded_tools.creditbridge.geolocation_tool.GeolocationScoringTool",
+            "class": "agents.coded_tools.creditbridge.geolocation_tool.GeolocationScoringTool",
             "function": {
                 "description": "Fetches geolocation stability data for an applicant.",
                 "parameters": {
@@ -289,7 +289,7 @@
 
         {
             "name": "MerchantScoringTool",
-            "class": "coded_tools.creditbridge.merchant_tool.MerchantScoringTool",
+            "class": "agents.coded_tools.creditbridge.merchant_tool.MerchantScoringTool",
             "function": {
                 "description": "Fetches merchant rating data for an applicant.",
                 "parameters": {
@@ -304,7 +304,7 @@
 
         {
             "name": "CashflowScoringTool",
-            "class": "coded_tools.creditbridge.cashflow_tool.CashflowScoringTool",
+            "class": "agents.coded_tools.creditbridge.cashflow_tool.CashflowScoringTool",
             "function": {
                 "description": "Fetches bank cashflow pattern data for an applicant.",
                 "parameters": {

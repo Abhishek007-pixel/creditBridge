@@ -1,0 +1,4 @@
+{
+    "music_nerd": "registries/music_nerd.hocon",
+    "creditbridge": "registries/creditbridge.hocon"
+}
