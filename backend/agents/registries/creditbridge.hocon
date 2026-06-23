@@ -46,7 +46,7 @@
                         },
                         "questionnaire_answers": {
                             "type": "array",
-                            "items": {"type": "integer"},
+                            "items": {"type": "int"},
                             "description": "List of answer indices (0-3) for each psychometric question"
                         }
                     },
@@ -135,7 +135,7 @@
                     "properties": {
                         "questionnaire_answers": {
                             "type": "array",
-                            "items": {"type": "integer"},
+                            "items": {"type": "int"},
                             "description": "List of answer indices (0=best, 3=worst) for each question"
                         }
                     },

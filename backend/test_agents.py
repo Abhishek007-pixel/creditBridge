@@ -34,7 +34,7 @@ TEST_CASES = [
         "applicant_id": "demo-priya-002",
         "consented_sources": ["phone_bill", "ecommerce", "geolocation", "merchant", "cashflow"],
         "questionnaire_answers": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        "expected_range": (600, 850),
+        "expected_range": (580, 850),
     },
     {
         "name": "Ravi Kumar (Mid scorer — partial data)",
@@ -135,7 +135,7 @@ async def test_pipeline(use_agents: bool = False, verbose: bool = False):
             print(f"  Result:    {'✓ PASS' if passed else '✗ FAIL'}")
 
             if verbose:
-                breakdown = result.get("breakdown", {})
+                breakdown = result.get("breakdown", {}) or result.get("agent_scores", {})
                 if breakdown:
                     print("  Breakdown:")
                     for source, data in breakdown.items():

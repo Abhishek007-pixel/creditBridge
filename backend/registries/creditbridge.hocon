@@ -61,7 +61,7 @@
                         },
                         "questionnaire_answers": {
                             "type": "array",
-                            "items": {"type": "integer"},
+                            "items": {"type": "int"},
                             "description": "Psychometric answer indices (0=most responsible, 3=least) for 10 questions"
                         }
                     },
@@ -227,7 +227,7 @@ Return ONLY valid JSON:
                     "properties": {
                         "questionnaire_answers": {
                             "type": "array",
-                            "items": {"type": "integer"},
+                            "items": {"type": "int"},
                             "description": "Answer indices (0=most responsible, 3=least) for 10 financial behavior questions"
                         }
                     },
