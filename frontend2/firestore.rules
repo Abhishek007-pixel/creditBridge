@@ -1,0 +1,92 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny safety-net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasUserRole(role) {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == role;
+    }
+
+    function isOfficer() {
+      return hasUserRole('officer');
+    }
+
+    function isAdmin() {
+      return hasUserRole('admin');
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Collection: /users/{userId}
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // Collection: /applicants/{applicantId}
+    match /applicants/{applicantId} {
+      allow read: if isSignedIn() && (applicantId == request.auth.uid || isOfficer() || isAdmin());
+      allow create: if isSignedIn() && isValidId(applicantId) && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && (applicantId == request.auth.uid || isOfficer() || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Collection: /consents/{applicantId}
+    match /consents/{applicantId} {
+      allow read: if isSignedIn() && (applicantId == request.auth.uid || isOfficer() || isAdmin());
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Collection: /psychometric_answers/{applicantId}
+    match /psychometric_answers/{applicantId} {
+      allow read: if isSignedIn() && (applicantId == request.auth.uid || isOfficer() || isAdmin());
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Collection: /credit_scores/{applicantId}
+    match /credit_scores/{applicantId} {
+      allow read: if isSignedIn() && (applicantId == request.auth.uid || isOfficer() || isAdmin());
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Collection: /consent_logs/{logId}
+    match /consent_logs/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+    }
+
+    // Collection: /audit_logs/{logId}
+    match /audit_logs/{logId} {
+      allow read: if isOfficer() || isAdmin();
+      allow create: if isSignedIn();
+    }
+
+    // Collection: /agent_weights/{docId}
+    match /agent_weights/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}

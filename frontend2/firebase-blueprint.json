@@ -1,0 +1,232 @@
+{
+  "entities": {
+    "Applicant": {
+      "title": "Applicant",
+      "description": "Represents the credit applicant profile with PII details.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "aadhaar_last4": {
+          "type": "string"
+        },
+        "aadhaar_hash": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "name", "email", "phone", "aadhaar_last4", "aadhaar_hash", "userId", "created_at"]
+    },
+    "Consent": {
+      "title": "Consent",
+      "description": "Applicant's consent decisions for individual alternate data channels.",
+      "type": "object",
+      "properties": {
+        "applicant_id": {
+          "type": "string"
+        },
+        "phone_bill": {
+          "type": "boolean"
+        },
+        "ecommerce": {
+          "type": "boolean"
+        },
+        "geolocation": {
+          "type": "boolean"
+        },
+        "merchant": {
+          "type": "boolean"
+        },
+        "cashflow": {
+          "type": "boolean"
+        },
+        "psychometric": {
+          "type": "boolean"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["applicant_id", "phone_bill", "ecommerce", "geolocation", "merchant", "cashflow", "psychometric", "updated_at"]
+    },
+    "PsychometricAnswers": {
+      "title": "PsychometricAnswers",
+      "description": "Psychometric questionnaire answer choices submitted by the applicant.",
+      "type": "object",
+      "properties": {
+        "applicant_id": {
+          "type": "string"
+        },
+        "answers": {
+          "type": "array"
+        },
+        "submitted_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["applicant_id", "answers", "submitted_at"]
+    },
+    "CreditScore": {
+      "title": "CreditScore",
+      "description": "Alternate credit score, loan recommendations, explanation, and breakdown.",
+      "type": "object",
+      "properties": {
+        "applicant_id": {
+          "type": "string"
+        },
+        "final_score": {
+          "type": "integer"
+        },
+        "risk_category": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string"
+        },
+        "loan_recommended": {
+          "type": "number"
+        },
+        "interest_rate": {
+          "type": "number"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "breakdown": {
+          "type": "object"
+        },
+        "weights_used": {
+          "type": "object"
+        },
+        "pipeline_mode": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "decided_by": {
+          "type": "string"
+        },
+        "decided_at": {
+          "type": "string"
+        },
+        "scored_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["applicant_id", "final_score", "risk_category", "decision", "loan_recommended", "interest_rate", "explanation", "breakdown", "weights_used", "pipeline_mode", "status", "scored_at"]
+    },
+    "ConsentLog": {
+      "title": "ConsentLog",
+      "description": "Immutable log of consent action updates for dynamic weight redistribution audit trail.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "applicant_id": {
+          "type": "string"
+        },
+        "source_name": {
+          "type": "string"
+        },
+        "consented": {
+          "type": "boolean"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "applicant_id", "source_name", "consented", "timestamp"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System audit trail of human updates, weight configurations, and bank officer actions.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "applicant_id": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "action", "metadata", "timestamp"]
+    },
+    "AgentWeight": {
+      "title": "AgentWeight",
+      "description": "System configurations for alternate signal weights (admin view).",
+      "type": "object",
+      "properties": {
+        "weights": {
+          "type": "object"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["weights", "updated_at"]
+    }
+  },
+  "firestore": {
+    "/applicants/{applicantId}": {
+      "schema": "Applicant",
+      "description": "Registered applicants and their profiles."
+    },
+    "/consents/{applicantId}": {
+      "schema": "Consent",
+      "description": "Latest consent choices per applicant."
+    },
+    "/psychometric_answers/{applicantId}": {
+      "schema": "PsychometricAnswers",
+      "description": "Answers to evaluation questions."
+    },
+    "/credit_scores/{applicantId}": {
+      "schema": "CreditScore",
+      "description": "Computed credit scores and metrics."
+    },
+    "/consent_logs/{logId}": {
+      "schema": "ConsentLog",
+      "description": "Audit trails of individual changes in consent decisions."
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Generic system audit actions."
+    },
+    "/agent_weights/current": {
+      "schema": "AgentWeight",
+      "description": "Weight tuning parameters."
+    }
+  }
+}

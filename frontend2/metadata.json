@@ -1,0 +1,6 @@
+{
+  "name": "CreditBridge",
+  "description": "AI-powered alternate credit scoring system designed for the PSB Hackathon 2026 to unlock fair loans for credit-invisible borrowers with no bureau history.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
