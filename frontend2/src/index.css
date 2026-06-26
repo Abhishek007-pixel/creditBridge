@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Space Grotesk", sans-serif;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer base {
+  :root:not(.dark) {
+    --color-neutral-950: #f8fafc;
+    --color-neutral-900: #f1f5f9;
+    --color-neutral-850: #e2e8f0;
+    --color-neutral-800: #cbd5e1;
+    --color-neutral-750: #94a3b8;
+    --color-neutral-700: #64748b;
+    --color-neutral-600: #475569;
+    --color-neutral-500: #334155;
+    --color-neutral-400: #1e293b;
+    --color-neutral-300: #0f172a;
+    --color-neutral-200: #020617;
+    --color-neutral-100: #000000;
+    --color-neutral-50: #000000;
+    --color-white: #020617;
+    --color-black: #ffffff;
+    color-scheme: light;
+  }
+}
+
+
+/* Custom print style override for bank-grade certificate output PDF */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  header, footer, button, select, input, .print\:hidden {
+    display: none !important;
+  }
+  .bg-slate-900\/50, .bg-slate-[0-9]+\/[0-9]+, .bg-slate-950\/20, .bg-slate-800\/30 {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  .text-white, .text-slate-100, .text-slate-200, .text-slate-300 {
+    color: black !important;
+  }
+  .text-slate-400, .text-slate-500 {
+    color: #4b5563 !important;
+  }
+}
