@@ -117,6 +117,15 @@ async def _create_indexes():
     await db.applicants_mongo.create_index("email", sparse=True)
     await db.applicants_mongo.create_index("sqlite_id", sparse=True)  # bridge to SQLite id
 
+    # ── bank_statements ───────────────────────────────────────────────────
+    await db.bank_statements.create_index("applicant_id")
+    await db.bank_statements.create_index("file_hash")
+    await db.bank_statements.create_index("verification_level")
+
+    # ── account_aggregators ───────────────────────────────────────────────
+    await db.account_aggregators.create_index("applicant_id")
+    await db.account_aggregators.create_index("phone_number")
+
     logger.info("MongoDB indexes created/verified.")
 
 
@@ -239,3 +248,85 @@ async def get_bill_streams_for_applicant(applicant_id: str) -> list:
         doc["_id"] = str(doc["_id"])
         streams.append(doc)
     return streams
+
+
+# ── bank_statements helpers ────────────────────────────────────────────────
+
+async def create_bank_statement(doc: dict) -> str:
+    """Insert a new bank statement record."""
+    db = get_mongo_db()
+    doc.setdefault("upload_timestamp", datetime.now(timezone.utc))
+    doc.setdefault("stage", "uploaded")
+    doc.setdefault("flags", [])
+    doc.setdefault("transactions", [])
+    result = await db.bank_statements.insert_one(doc)
+    return str(result.inserted_id)
+
+
+async def get_bank_statements_for_applicant(applicant_id: str) -> list:
+    """Retrieve bank statements for an applicant, excluding raw file bytes."""
+    db = get_mongo_db()
+    cursor = db.bank_statements.find(
+        {"applicant_id": applicant_id},
+        {"file_bytes_b64": 0}
+    ).sort("upload_timestamp", -1)
+    docs = []
+    async for doc in cursor:
+        doc["_id"] = str(doc["_id"])
+        docs.append(doc)
+    return docs
+
+
+async def update_bank_statement(doc_id: str, update: dict) -> bool:
+    """Update bank statement fields by _id."""
+    from bson import ObjectId
+    db = get_mongo_db()
+    result = await db.bank_statements.update_one(
+        {"_id": ObjectId(doc_id)},
+        {"$set": {**update, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return result.modified_count > 0
+
+
+async def check_bank_statement_duplicate(applicant_id: str, file_hash: str) -> bool:
+    """Check if statement duplicate exists."""
+    db = get_mongo_db()
+    existing = await db.bank_statements.find_one({
+        "applicant_id": applicant_id,
+        "file_hash": file_hash,
+    })
+    return existing is not None
+
+
+# ── account_aggregators helpers ─────────────────────────────────────────────
+
+async def upsert_aa_feed(applicant_id: str, phone_number: str, bank_name: str, transactions: list):
+    """Upsert connected account aggregator feed transactions."""
+    db = get_mongo_db()
+    await db.account_aggregators.update_one(
+        {
+            "applicant_id": applicant_id,
+            "phone_number": phone_number,
+            "bank_name": bank_name,
+        },
+        {
+            "$set": {
+                "transactions": transactions,
+                "verification_level": "account_aggregator",
+                "connected_at": datetime.now(timezone.utc),
+            }
+        },
+        upsert=True
+    )
+
+
+async def get_aa_feeds_for_applicant(applicant_id: str) -> list:
+    """Retrieve all AA connected feeds for an applicant."""
+    db = get_mongo_db()
+    cursor = db.account_aggregators.find({"applicant_id": applicant_id})
+    feeds = []
+    async for doc in cursor:
+        doc["_id"] = str(doc["_id"])
+        feeds.append(doc)
+    return feeds
+

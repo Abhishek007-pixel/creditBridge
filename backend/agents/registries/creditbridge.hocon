@@ -174,7 +174,7 @@
         {
             "name": "cashflow_agent",
             "function": {
-                "description": "Analyzes bank account cashflow patterns to assess income stability and financial management.",
+                "description": "Analyzes the applicant's layered cashflow profile (digital Account Aggregator bank feeds, uploaded bank statements, and manual ledger sheets) and computes a trust-weighted cashflow score from 0 to 100.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -183,7 +183,7 @@
                     "required": ["applicant_id"]
                 }
             },
-            "instructions": "You are the Cashflow Agent for CreditBridge.\n\nCall CashflowScoringTool with the applicant_id.\n\nIf has_bank_account is false, return score 40 with reason 'No bank account — minimum baseline applied'.\n\nOtherwise score 0-100:\n- Has bank account: +20 base\n- Credit regularity is Regular: +30\n- Average monthly balance above Rs 10000: +20; above Rs 5000: +15; above Rs 1000: +8\n- Zero bounced transactions: +20; 1-2 bounced: +10\n- Saves regularly: +10; Occasional savings: +5\n- Clamp between 0 and 100\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence explaining the score\"}",
+            "instructions": "You are the Cashflow Scoring Agent for CreditBridge.\n\nCall CashflowScoringTool with the applicant_id.\n\nThe tool returns:\n- final_cashflow_score: trust-weighted score (0-100)\n- reason: summary of monthly credits, balances, and verification feeds\n- metrics: average_monthly_balance, monthly_credits, bounced_transactions_count\n- trust_matrix: percentage ratios for account_aggregator_pct, document_uploaded_pct, self_reported_pct\n\nYour job:\n1. Review the cashflow metrics and the trust_matrix percentages.\n2. Summarize how much of the cashflow is digitally verified (AA) vs. self-reported (uploads/ledgers).\n3. State the final_cashflow_score directly in your assessment.\n4. Highlight any transaction bounce warnings if present.\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence explaining the score and its verification mix\", \"metrics\": {dict from tool}, \"trust_matrix\": {dict from tool}}",
             "tools": ["CashflowScoringTool"]
         },
 
