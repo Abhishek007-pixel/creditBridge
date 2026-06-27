@@ -38,13 +38,14 @@ export const BankDashboard: React.FC<BankDashboardProps> = ({ user, onLogout }) 
       setLoading(true);
       try {
         const token = localStorage.getItem('token');
-        // Fetch from backend (fallback to empty array if backend route not implemented yet)
-        const res = await fetch('http://localhost:3001/api/admin/applicants', {
+        // Fetch from Python backend (Vite proxy forwards /api/* to port 8000)
+        const res = await fetch('/api/applicants', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.ok) {
           const data = await res.json();
-          setApplicants(data);
+          // Python returns { applicants: [...] } — extract the array
+          setApplicants(Array.isArray(data) ? data : (data.applicants || []));
         } else {
           setApplicants([]);
         }
@@ -68,7 +69,7 @@ export const BankDashboard: React.FC<BankDashboardProps> = ({ user, onLogout }) 
 
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`http://localhost:3001/api/admin/applicants/${app.id}`, {
+      const res = await fetch(`/api/applicants/${app.id}/score`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -79,6 +80,10 @@ export const BankDashboard: React.FC<BankDashboardProps> = ({ user, onLogout }) 
         if (data.logs) {
           setAuditLogs(data.logs);
         }
+        // Merge status from score into selectedApplicant
+        if (data.score?.status) {
+          setSelectedApplicant({ ...app, status: data.score.status });
+        }
       }
     } catch (e) {
       console.error(e);
@@ -88,7 +93,7 @@ export const BankDashboard: React.FC<BankDashboardProps> = ({ user, onLogout }) 
   const handleUpdateStatus = async (applicantId: string, choice: 'approved' | 'rejected') => {
     try {
       const token = localStorage.getItem('token');
-      await fetch(`http://localhost:3001/api/admin/applicants/${applicantId}/status`, {
+      await fetch(`/api/admin/applicants/${applicantId}/status`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

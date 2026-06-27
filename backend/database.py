@@ -52,6 +52,7 @@ def init_db():
                 cashflow_reason     TEXT DEFAULT '',
                 weights_used        TEXT DEFAULT '{}',
                 pipeline_mode       TEXT DEFAULT 'synthetic',
+                status              TEXT DEFAULT 'pending',
                 created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (applicant_id) REFERENCES applicants(id)
             );
@@ -103,6 +104,13 @@ def init_db():
                 weights
             )
         conn.commit()
+
+        # Migration: add status column to credit_scores if not present (for existing DBs)
+        try:
+            conn.execute("ALTER TABLE credit_scores ADD COLUMN status TEXT DEFAULT 'pending'")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists — safe to ignore
 
 
 @contextmanager

@@ -31,7 +31,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, darkMode, setDarkM
     setLoading(true);
     try {
       // First try to sign in
-      let res = await fetch('http://localhost:3001/api/auth/login', {
+      let res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: profile.email, password: profile.pass })
@@ -41,7 +41,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, darkMode, setDarkM
       
       if (!res.ok) {
         // If not found, register it
-        res = await fetch('http://localhost:3001/api/auth/register', {
+        res = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: profile.email, password: profile.pass, name: profile.name, role: profile.role })
@@ -79,7 +79,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, darkMode, setDarkM
     }
 
     try {
-      const endpoint = isRegister ? 'http://localhost:3001/api/auth/register' : 'http://localhost:3001/api/auth/login';
+      const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
       const payload: any = { email, password };
       
       if (isRegister) {
@@ -104,7 +104,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, darkMode, setDarkM
 
       if (isRegister && role === 'applicant') {
         // Pre-populate applicant registry via new API
-        await fetch('http://localhost:3001/api/applicants', {
+        await fetch('/api/register', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',

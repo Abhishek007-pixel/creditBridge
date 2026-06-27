@@ -37,7 +37,7 @@ export default function App() {
       if (token) {
         try {
           // Verify token against our backend (you could add a /api/auth/verify endpoint)
-          const res = await fetch('http://localhost:3001/api/me', {
+          const res = await fetch('/api/me', {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           if (res.ok) {
