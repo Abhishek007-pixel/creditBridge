@@ -16,6 +16,7 @@ from routes.bills import router as bills_router
 from routes.cashflow import router as cashflow_router
 from routes.ecommerce import router as ecommerce_router
 from routes.commitments import router as commitments_router
+from routes.merchant import router as merchant_router
 from config import DEBUG
 
 logging.basicConfig(
@@ -55,6 +56,7 @@ app.include_router(bills_router)
 app.include_router(cashflow_router)
 app.include_router(ecommerce_router)
 app.include_router(commitments_router)
+app.include_router(merchant_router)
 
 
 @app.on_event("startup")

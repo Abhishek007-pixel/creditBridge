@@ -86,7 +86,8 @@ def run_synthetic_pipeline(
 
     if "merchant" in consented_sources:
         s, r = score_merchant(data["merchant"])
-        agent_scores["merchant"] = (s, r)
+        if s >= 0:
+            agent_scores["merchant"] = (s, r)
 
     if "cashflow" in consented_sources:
         s, r = score_cashflow(data["cashflow"])

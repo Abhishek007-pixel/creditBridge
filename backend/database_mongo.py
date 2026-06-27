@@ -136,6 +136,15 @@ async def _create_indexes():
     await db.financial_commitments.create_index("file_hash")
     await db.financial_commitments.create_index("stage")
 
+    # ── gstn_filings ─────────────────────────────────────────────────────
+    await db.gstn_filings.create_index("applicant_id")
+    await db.gstn_filings.create_index("file_hash")
+    await db.gstn_filings.create_index("stage")
+
+    # ── merchant_references ──────────────────────────────────────────────
+    await db.merchant_references.create_index("applicant_id")
+    await db.merchant_references.create_index("verified_status")
+
     logger.info("MongoDB indexes created/verified.")
 
 
@@ -433,5 +442,86 @@ async def check_financial_commitment_duplicate(applicant_id: str, file_hash: str
         "file_hash": file_hash,
     })
     return existing is not None
+
+
+# ── gstn_filings helpers ───────────────────────────────────────────────────
+
+async def create_gstn_filing(doc: dict) -> str:
+    """Insert a new GST filing record."""
+    db = get_mongo_db()
+    doc.setdefault("upload_timestamp", datetime.now(timezone.utc))
+    doc.setdefault("stage", "uploaded")
+    result = await db.gstn_filings.insert_one(doc)
+    return str(result.inserted_id)
+
+
+async def get_gstn_filings_for_applicant(applicant_id: str) -> list:
+    """Retrieve GST filings for an applicant, excluding raw file bytes."""
+    db = get_mongo_db()
+    cursor = db.gstn_filings.find(
+        {"applicant_id": applicant_id},
+        {"file_bytes_b64": 0}
+    ).sort("upload_timestamp", -1)
+    docs = []
+    async for doc in cursor:
+        doc["_id"] = str(doc["_id"])
+        docs.append(doc)
+    return docs
+
+
+async def update_gstn_filing(doc_id: str, update: dict) -> bool:
+    """Update GST filing fields by _id."""
+    from bson import ObjectId
+    db = get_mongo_db()
+    result = await db.gstn_filings.update_one(
+        {"_id": ObjectId(doc_id)},
+        {"$set": {**update, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return result.modified_count > 0
+
+
+async def check_gstn_filing_duplicate(applicant_id: str, file_hash: str) -> bool:
+    """Check if GST filing duplicate exists."""
+    db = get_mongo_db()
+    existing = await db.gstn_filings.find_one({
+        "applicant_id": applicant_id,
+        "file_hash": file_hash,
+    })
+    return existing is not None
+
+
+# ── merchant_references helpers ────────────────────────────────────────────
+
+async def create_merchant_reference(doc: dict) -> str:
+    """Insert a new merchant reference contact."""
+    db = get_mongo_db()
+    doc.setdefault("created_at", datetime.now(timezone.utc))
+    doc.setdefault("verified_status", "pending")
+    doc.setdefault("rating", 0.0)
+    result = await db.merchant_references.insert_one(doc)
+    return str(result.inserted_id)
+
+
+async def get_merchant_references_for_applicant(applicant_id: str) -> list:
+    """Retrieve all merchant references for an applicant."""
+    db = get_mongo_db()
+    cursor = db.merchant_references.find({"applicant_id": applicant_id})
+    refs = []
+    async for doc in cursor:
+        doc["_id"] = str(doc["_id"])
+        refs.append(doc)
+    return refs
+
+
+async def update_merchant_reference(doc_id: str, update: dict) -> bool:
+    """Update merchant reference contact by _id."""
+    from bson import ObjectId
+    db = get_mongo_db()
+    result = await db.merchant_references.update_one(
+        {"_id": ObjectId(doc_id)},
+        {"$set": {**update, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return result.modified_count > 0
+
 
 

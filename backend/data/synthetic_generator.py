@@ -295,7 +295,7 @@ def score_merchant(data: dict) -> tuple[int, str]:
     """Score merchant ratings 0-100."""
     d = data
     if d["total_merchants_rated"] == 0:
-        return 50, "No merchant data available — using neutral score"
+        return -1, "No merchant data available — agent skipped"
 
     score = 0
     rating = d["average_rating"]
