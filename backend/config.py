@@ -56,12 +56,13 @@ ALGORITHM: str = "HS256"
 
 # ── Default agent weights ────────────────────────────────────────────────
 DEFAULT_WEIGHTS: dict = {
-    "phone_bill":    0.25,
-    "cashflow":      0.20,
-    "psychometric":  0.20,
-    "geolocation":   0.15,
-    "ecommerce":     0.12,
-    "merchant":      0.08,
+    "bill_consistency":     0.20,
+    "cashflow":             0.20,
+    "financial_commitment": 0.18,
+    "psychometric":         0.15,
+    "geolocation":          0.12,
+    "ecommerce":            0.10,
+    "merchant":             0.05,
 }
 
 # ── Score bands ──────────────────────────────────────────────────────────

@@ -31,29 +31,31 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS credit_scores (
-                id                  TEXT PRIMARY KEY,
-                applicant_id        TEXT NOT NULL,
-                phone_score         INTEGER DEFAULT 0,
-                ecommerce_score     INTEGER DEFAULT 0,
-                geo_score           INTEGER DEFAULT 0,
-                psychometric_score  INTEGER DEFAULT 0,
-                merchant_score      INTEGER DEFAULT 0,
-                cashflow_score      INTEGER DEFAULT 0,
-                final_score         INTEGER DEFAULT 0,
-                risk_category       TEXT DEFAULT '',
-                loan_recommended    INTEGER DEFAULT 0,
-                interest_rate       REAL DEFAULT 0.0,
-                explanation         TEXT DEFAULT '',
-                phone_reason        TEXT DEFAULT '',
-                ecommerce_reason    TEXT DEFAULT '',
-                geo_reason          TEXT DEFAULT '',
-                psychometric_reason TEXT DEFAULT '',
-                merchant_reason     TEXT DEFAULT '',
-                cashflow_reason     TEXT DEFAULT '',
-                weights_used        TEXT DEFAULT '{}',
-                pipeline_mode       TEXT DEFAULT 'synthetic',
-                status              TEXT DEFAULT 'pending',
-                created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                id                          TEXT PRIMARY KEY,
+                applicant_id                TEXT NOT NULL,
+                phone_score                 INTEGER DEFAULT 0,
+                ecommerce_score             INTEGER DEFAULT 0,
+                geo_score                   INTEGER DEFAULT 0,
+                psychometric_score          INTEGER DEFAULT 0,
+                merchant_score              INTEGER DEFAULT 0,
+                cashflow_score              INTEGER DEFAULT 0,
+                financial_commitment_score  INTEGER DEFAULT 0,
+                final_score                 INTEGER DEFAULT 0,
+                risk_category               TEXT DEFAULT '',
+                loan_recommended            INTEGER DEFAULT 0,
+                interest_rate               REAL DEFAULT 0.0,
+                explanation                 TEXT DEFAULT '',
+                phone_reason                TEXT DEFAULT '',
+                ecommerce_reason            TEXT DEFAULT '',
+                geo_reason                  TEXT DEFAULT '',
+                psychometric_reason         TEXT DEFAULT '',
+                merchant_reason             TEXT DEFAULT '',
+                cashflow_reason             TEXT DEFAULT '',
+                financial_commitment_reason TEXT DEFAULT '',
+                weights_used                TEXT DEFAULT '{}',
+                pipeline_mode               TEXT DEFAULT 'synthetic',
+                status                      TEXT DEFAULT 'pending',
+                created_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (applicant_id) REFERENCES applicants(id)
             );
 
@@ -88,35 +90,21 @@ def init_db():
                 FOREIGN KEY (applicant_id) REFERENCES applicants(id)
             );
         """)
-        # Seed default agent weights if not present
-        cursor = conn.execute("SELECT COUNT(*) FROM agent_weights")
-        if cursor.fetchone()[0] == 0:
-            weights = [
-                ("bill_consistency", 0.25),   # new — replaces phone_bill
-                ("cashflow",         0.20),
-                ("psychometric",     0.20),
-                ("geolocation",      0.15),
-                ("ecommerce",        0.12),
-                ("merchant",         0.08),
-            ]
-            conn.executemany(
-                "INSERT INTO agent_weights (agent_name, weight) VALUES (?, ?)",
-                weights
-            )
-        else:
-            # Migration: rename phone_bill -> bill_consistency if it exists
-            conn.execute(
-                "UPDATE agent_weights SET agent_name = 'bill_consistency' "
-                "WHERE agent_name = 'phone_bill'"
-            )
-            # Insert bill_consistency if neither key exists yet
-            existing = [r[0] for r in conn.execute(
-                "SELECT agent_name FROM agent_weights"
-            ).fetchall()]
-            if "bill_consistency" not in existing:
-                conn.execute(
-                    "INSERT INTO agent_weights (agent_name, weight) VALUES ('bill_consistency', 0.25)"
-                )
+        # Seed/Update default agent weights
+        weights = [
+            ("bill_consistency",      0.20),
+            ("cashflow",              0.20),
+            ("financial_commitment",  0.18),
+            ("psychometric",          0.15),
+            ("geolocation",           0.12),
+            ("ecommerce",             0.10),
+            ("merchant",              0.05),
+        ]
+        # Always upsert to ensure the weights are correct and up-to-date
+        conn.executemany(
+            "INSERT OR REPLACE INTO agent_weights (agent_name, weight) VALUES (?, ?)",
+            weights
+        )
         conn.commit()
 
         # Migration: add status column to credit_scores if not present (for existing DBs)
@@ -125,6 +113,18 @@ def init_db():
             conn.commit()
         except Exception:
             pass  # Column already exists — safe to ignore
+
+        # Migration: add financial_commitment columns to credit_scores if not present
+        try:
+            conn.execute("ALTER TABLE credit_scores ADD COLUMN financial_commitment_score INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE credit_scores ADD COLUMN financial_commitment_reason TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
 
 
 @contextmanager

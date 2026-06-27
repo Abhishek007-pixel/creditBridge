@@ -39,6 +39,7 @@ from data.synthetic_generator import (
     score_merchant,
     score_cashflow,
     score_psychometric,
+    score_financial_commitment,
     calculate_final_score,
 )
 from database import get_agent_weights
@@ -90,6 +91,10 @@ def run_synthetic_pipeline(
     if "cashflow" in consented_sources:
         s, r = score_cashflow(data["cashflow"])
         agent_scores["cashflow"] = (s, r)
+
+    if "financial_commitment" in consented_sources:
+        s, r = score_financial_commitment(data["financial_commitment"])
+        agent_scores["financial_commitment"] = (s, r)
 
     # Update weights to use bill_consistency key
     updated_weights = {}

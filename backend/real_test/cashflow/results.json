@@ -1,0 +1,21 @@
+{
+  "source": "cashflow",
+  "applicant_id": "karan",
+  "final_cashflow_score": 100,
+  "reason": "Monthly credits \u20b949,417 (weighted: \u20b946,767). Avg balance \u20b927,542. Trust matrix: 88.8% AA + 11.2% Manual ledger. No transaction bounces detected.",
+  "metrics": {
+    "average_monthly_balance": 27542.0,
+    "monthly_credits": 49417.0,
+    "monthly_weighted_credits": 46767.0,
+    "bounced_transactions_count": 0,
+    "transaction_count": 28
+  },
+  "trust_matrix": {
+    "account_aggregator_pct": 88.8,
+    "document_uploaded_pct": 0.0,
+    "self_reported_pct": 11.2,
+    "trust_description": "Verified: 88.8% AA, 0.0% Doc Uploads, 11.2% Ledgers"
+  },
+  "data_source": "mongodb",
+  "status": "success"
+}

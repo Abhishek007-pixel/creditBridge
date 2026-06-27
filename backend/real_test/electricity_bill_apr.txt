@@ -1,0 +1,6 @@
+BANGALORE ELECTRICITY SUPPLY COMPANY (BESCOM)
+Consumer ID: 8749281-0
+Billing Period: April 2024
+Consumer Name: Karan Mehta
+Amount Due: Rs. 1,410.00
+Payment Status: PAID

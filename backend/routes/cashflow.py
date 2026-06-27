@@ -30,6 +30,7 @@ from database_mongo import (
 from database import get_db, log_audit
 from data.cashflow_seeds import get_transactions_by_phone
 from config import MISTRAL_API_KEY
+from utils.ocr import call_mistral_text, extract_document_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/cashflow", tags=["cashflow"])
@@ -57,77 +58,7 @@ def _sha256(data: bytes) -> str:
 
 
 def _call_mistral_text(prompt: str, max_tokens: int = 800) -> str:
-    resp = requests.post(
-        f"{MISTRAL_API_BASE}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {MISTRAL_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": MISTRAL_TEXT_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens,
-            "temperature": 0.1,
-        },
-        timeout=45,
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"].strip()
-
-
-def _call_mistral_ocr(image_b64: str, mime_type: str) -> str:
-    resp = requests.post(
-        f"{MISTRAL_API_BASE}/ocr",
-        headers={
-            "Authorization": f"Bearer {MISTRAL_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": MISTRAL_OCR_MODEL,
-            "document": {
-                "type": "image_url",
-                "image_url": f"data:{mime_type};base64,{image_b64}",
-            },
-        },
-        timeout=60,
-    )
-    if resp.status_code == 200:
-        pages = resp.json().get("pages", [])
-        return "\n".join(p.get("markdown", "") for p in pages)
-    return ""
-
-
-def _extract_text_from_pdf(file_bytes: bytes) -> tuple[str, str]:
-    try:
-        import pdfplumber
-        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            text = "\n".join((p.extract_text() or "") for p in pdf.pages)
-        if len(text.strip()) > 50:
-            return text, "pdfplumber"
-    except Exception as e:
-        logger.warning(f"pdfplumber failed: {e}")
-
-    # Fallback to OCR
-    b64 = base64.b64encode(file_bytes).decode()
-    text = _call_mistral_ocr(b64, "application/pdf")
-    return text, "mistral_ocr"
-
-
-def _extract_text_from_csv(file_bytes: bytes, extension: str) -> tuple[str, str]:
-    try:
-        import pandas as pd
-        if extension in (".xlsx", ".xls"):
-            df = pd.read_excel(io.BytesIO(file_bytes), nrows=40)
-        else:
-            df = pd.read_csv(io.BytesIO(file_bytes), nrows=40)
-
-        lines = [f"Columns: {', '.join(df.columns)}", f"Rows: {len(df)}", "---"]
-        for _, row in df.head(15).iterrows():
-            lines.append(" | ".join(str(v) for v in row.values))
-        return "\n".join(lines), "pandas_csv"
-    except Exception as e:
-        logger.warning(f"CSV parse failed: {e}")
-        return "", "csv_error"
+    return call_mistral_text(prompt, max_tokens)
 
 
 def _parse_transactions_with_llm(raw_text: str) -> list:
@@ -175,19 +106,8 @@ async def _process_cashflow_statement(doc_id: str, file_bytes: bytes, mime_type:
     await update_bank_statement(doc_id, {"stage": "extracting"})
 
     try:
-        # Extract text based on file type
-        if mime_type == "application/pdf":
-            raw_text, extract_method = _extract_text_from_pdf(file_bytes)
-        elif ext in (".csv", ".xlsx", ".xls"):
-            raw_text, extract_method = _extract_text_from_csv(file_bytes, ext)
-        elif mime_type == "text/plain" or ext == ".txt":
-            raw_text = file_bytes.decode("utf-8", errors="ignore")
-            extract_method = "plain_text"
-        else:
-            # Scanned image statements
-            b64 = base64.b64encode(file_bytes).decode()
-            raw_text = _call_mistral_ocr(b64, mime_type)
-            extract_method = "mistral_ocr"
+        # Extract text using shared OCR helper
+        raw_text, extract_method = extract_document_text(file_bytes, mime_type, ext)
 
         if not raw_text or len(raw_text.strip()) < 20:
             await update_bank_statement(doc_id, {

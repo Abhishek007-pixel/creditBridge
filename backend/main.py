@@ -14,6 +14,8 @@ from routes.reports import router as reports_router
 from routes.admin import router as admin_router
 from routes.bills import router as bills_router
 from routes.cashflow import router as cashflow_router
+from routes.ecommerce import router as ecommerce_router
+from routes.commitments import router as commitments_router
 from config import DEBUG
 
 logging.basicConfig(
@@ -51,6 +53,8 @@ app.include_router(reports_router)
 app.include_router(admin_router)
 app.include_router(bills_router)
 app.include_router(cashflow_router)
+app.include_router(ecommerce_router)
+app.include_router(commitments_router)
 
 
 @app.on_event("startup")

@@ -214,7 +214,10 @@ class BillConsistencyScoringTool(CodedTool):
                         "doc_ids":            [],
                     }
 
-                stream_map[key]["amounts"].append(extraction.get("amount", 0))
+                amt = extraction.get("amount")
+                if amt is None:
+                    amt = 0
+                stream_map[key]["amounts"].append(amt)
                 period = extraction.get("billing_period", "")
                 if period:
                     stream_map[key]["billing_periods"].add(period)

@@ -126,6 +126,16 @@ async def _create_indexes():
     await db.account_aggregators.create_index("applicant_id")
     await db.account_aggregators.create_index("phone_number")
 
+    # ── ecommerce_invoices ───────────────────────────────────────────────
+    await db.ecommerce_invoices.create_index("applicant_id")
+    await db.ecommerce_invoices.create_index("file_hash")
+    await db.ecommerce_invoices.create_index("stage")
+
+    # ── financial_commitments ────────────────────────────────────────────
+    await db.financial_commitments.create_index("applicant_id")
+    await db.financial_commitments.create_index("file_hash")
+    await db.financial_commitments.create_index("stage")
+
     logger.info("MongoDB indexes created/verified.")
 
 
@@ -329,4 +339,99 @@ async def get_aa_feeds_for_applicant(applicant_id: str) -> list:
         doc["_id"] = str(doc["_id"])
         feeds.append(doc)
     return feeds
+
+
+# ── ecommerce_invoices helpers ─────────────────────────────────────────────
+
+async def create_ecommerce_invoice(doc: dict) -> str:
+    """Insert a new ecommerce invoice record."""
+    db = get_mongo_db()
+    doc.setdefault("upload_timestamp", datetime.now(timezone.utc))
+    doc.setdefault("stage", "uploaded")
+    doc.setdefault("verification_level", "document_uploaded")
+    result = await db.ecommerce_invoices.insert_one(doc)
+    return str(result.inserted_id)
+
+
+async def get_ecommerce_invoices_for_applicant(applicant_id: str) -> list:
+    """Retrieve ecommerce invoices for an applicant, excluding raw file bytes."""
+    db = get_mongo_db()
+    cursor = db.ecommerce_invoices.find(
+        {"applicant_id": applicant_id},
+        {"file_bytes_b64": 0}
+    ).sort("upload_timestamp", -1)
+    docs = []
+    async for doc in cursor:
+        doc["_id"] = str(doc["_id"])
+        docs.append(doc)
+    return docs
+
+
+async def update_ecommerce_invoice(doc_id: str, update: dict) -> bool:
+    """Update ecommerce invoice fields by _id."""
+    from bson import ObjectId
+    db = get_mongo_db()
+    result = await db.ecommerce_invoices.update_one(
+        {"_id": ObjectId(doc_id)},
+        {"$set": {**update, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return result.modified_count > 0
+
+
+async def check_ecommerce_invoice_duplicate(applicant_id: str, file_hash: str) -> bool:
+    """Check if ecommerce invoice duplicate exists."""
+    db = get_mongo_db()
+    existing = await db.ecommerce_invoices.find_one({
+        "applicant_id": applicant_id,
+        "file_hash": file_hash,
+    })
+    return existing is not None
+
+
+# ── financial_commitments helpers ────────────────────────────────────────────
+
+async def create_financial_commitment(doc: dict) -> str:
+    """Insert a new financial commitment record."""
+    db = get_mongo_db()
+    doc.setdefault("upload_timestamp", datetime.now(timezone.utc))
+    doc.setdefault("stage", "uploaded")
+    doc.setdefault("verification_level", "document_uploaded")
+    result = await db.financial_commitments.insert_one(doc)
+    return str(result.inserted_id)
+
+
+async def get_financial_commitments_for_applicant(applicant_id: str) -> list:
+    """Retrieve financial commitments for an applicant, excluding raw file bytes."""
+    db = get_mongo_db()
+    cursor = db.financial_commitments.find(
+        {"applicant_id": applicant_id},
+        {"file_bytes_b64": 0}
+    ).sort("upload_timestamp", -1)
+    docs = []
+    async for doc in cursor:
+        doc["_id"] = str(doc["_id"])
+        docs.append(doc)
+    return docs
+
+
+async def update_financial_commitment(doc_id: str, update: dict) -> bool:
+    """Update financial commitment fields by _id."""
+    from bson import ObjectId
+    db = get_mongo_db()
+    result = await db.financial_commitments.update_one(
+        {"_id": ObjectId(doc_id)},
+        {"$set": {**update, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return result.modified_count > 0
+
+
+async def check_financial_commitment_duplicate(applicant_id: str, file_hash: str) -> bool:
+    """Check if financial commitment duplicate exists."""
+    db = get_mongo_db()
+    existing = await db.financial_commitments.find_one({
+        "applicant_id": applicant_id,
+        "file_hash": file_hash,
+    })
+    return existing is not None
+
 

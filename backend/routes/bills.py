@@ -37,7 +37,7 @@ from database_mongo import (
     get_bill_streams_for_applicant,
 )
 from database import get_db, log_audit
-from config import MISTRAL_API_KEY
+from utils.ocr import call_mistral_text, extract_document_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/bills", tags=["bills"])
@@ -49,10 +49,11 @@ ALLOWED_MIME_TYPES = {
     "image/jpg",
     "image/png",
     "text/csv",
+    "text/plain",
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
-ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".csv", ".xlsx", ".xls"}
+ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".csv", ".xlsx", ".xls", ".txt"}
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024   # 5MB
 MAX_FILES_PER_APPLICANT = 10
 
@@ -74,53 +75,7 @@ def _sha256(data: bytes) -> str:
 
 
 def _call_mistral_text(prompt: str, max_tokens: int = 512) -> str:
-    """Call Mistral text API via HTTP (no SDK — avoids dependency conflicts)."""
-    resp = requests.post(
-        f"{MISTRAL_API_BASE}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {MISTRAL_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": MISTRAL_TEXT_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens,
-            "temperature": 0.1,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"].strip()
-
-
-def _call_mistral_ocr(image_b64: str, mime_type: str = "image/jpeg") -> str:
-    """
-    Call Mistral OCR API to extract text from an image.
-    Uses mistral-ocr-latest which is designed for document OCR.
-    """
-    resp = requests.post(
-        f"{MISTRAL_API_BASE}/ocr",
-        headers={
-            "Authorization": f"Bearer {MISTRAL_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": MISTRAL_OCR_MODEL,
-            "document": {
-                "type": "image_url",
-                "image_url": f"data:{mime_type};base64,{image_b64}",
-            },
-        },
-        timeout=60,
-    )
-    if resp.status_code == 200:
-        data = resp.json()
-        # Extract text from pages
-        pages = data.get("pages", [])
-        return "\n".join(p.get("markdown", "") for p in pages)
-    else:
-        logger.warning(f"OCR API returned {resp.status_code}: {resp.text[:200]}")
-        return ""
+    return call_mistral_text(prompt, max_tokens)
 
 
 def _extract_text_from_pdf(file_bytes: bytes) -> tuple[str, str]:
@@ -129,28 +84,12 @@ def _extract_text_from_pdf(file_bytes: bytes) -> tuple[str, str]:
     Fall back to Mistral OCR if text is too sparse (scanned PDF).
     Returns (text, method_used).
     """
-    try:
-        import pdfplumber
-        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            text = "\n".join(
-                (page.extract_text() or "") for page in pdf.pages
-            )
-        if len(text.strip()) > 50:
-            return text, "pdfplumber"
-    except Exception as e:
-        logger.warning(f"pdfplumber failed: {e}")
-
-    # Fallback: send as base64 image to OCR (treat PDF as image-like)
-    b64 = base64.b64encode(file_bytes).decode()
-    text = _call_mistral_ocr(b64, mime_type="application/pdf")
-    return text, "mistral_ocr"
+    return extract_document_text(file_bytes, "application/pdf")
 
 
 def _extract_text_from_image(file_bytes: bytes, mime_type: str) -> tuple[str, str]:
     """OCR an image using Mistral OCR API."""
-    b64 = base64.b64encode(file_bytes).decode()
-    text = _call_mistral_ocr(b64, mime_type=mime_type)
-    return text, "mistral_ocr"
+    return extract_document_text(file_bytes, mime_type)
 
 
 def _extract_text_from_csv(file_bytes: bytes, extension: str) -> tuple[str, str]:
@@ -447,15 +386,7 @@ async def _process_bill(doc_id: str, file_bytes: bytes, mime_type: str, applican
     # ── Stage 2: Content Extraction ───────────────────────────────────────
     await update_bill_document(doc_id, {"stage": "extracting"})
     try:
-        if mime_type == "application/pdf":
-            # Path A: pdfplumber (text PDF) → Path B: Mistral OCR (scanned)
-            raw_text, extract_method = _extract_text_from_pdf(file_bytes)
-        elif original_ext in (".csv", ".xlsx", ".xls"):
-            # Path C: Structured CSV/Excel
-            raw_text, extract_method = _extract_text_from_csv(file_bytes, original_ext)
-        else:
-            # Path B: Image → Mistral OCR
-            raw_text, extract_method = _extract_text_from_image(file_bytes, mime_type)
+        raw_text, extract_method = extract_document_text(file_bytes, mime_type, original_ext)
     except Exception as e:
         logger.error(f"Text extraction failed for {doc_id}: {e}")
         await update_bill_document(doc_id, {
