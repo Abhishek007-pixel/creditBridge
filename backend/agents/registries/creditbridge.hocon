@@ -15,8 +15,9 @@
 
 {
     "llm_config": {
-        "model_name": "mistral/mistral-medium-latest"
-        "model_name": ${?AGENT_MODEL_NAME}
+        "class": "langchain_mistralai.ChatMistralAI"
+        "model_name": "mistral-medium-latest"
+        "mistral_api_key": ${?MISTRAL_API_KEY}
         "temperature": 0.2,
         "max_tokens": 2048
     },
@@ -280,20 +281,6 @@
             }
         },
 
-        {
-            "name": "PhoneBillScoringTool",
-            "class": "coded_tools.creditbridge.phone_bill_tool.PhoneBillScoringTool",
-            "function": {
-                "description": "[LEGACY] Fetches phone bill payment history for an applicant from the synthetic data generator. Kept for backward compatibility.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
-                    },
-                    "required": ["applicant_id"]
-                }
-            }
-        },
 
         {
             "name": "EcommerceScoringTool",
