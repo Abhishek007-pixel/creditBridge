@@ -17,6 +17,8 @@ import base64
 import logging
 import asyncio
 import re
+import statistics
+from calendar import month_abbr
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -46,8 +48,11 @@ ALLOWED_MIME_TYPES = {
     "image/jpeg",
     "image/jpg",
     "image/png",
+    "text/csv",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
-ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
+ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".csv", ".xlsx", ".xls"}
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024   # 5MB
 MAX_FILES_PER_APPLICANT = 10
 
@@ -148,6 +153,34 @@ def _extract_text_from_image(file_bytes: bytes, mime_type: str) -> tuple[str, st
     return text, "mistral_ocr"
 
 
+def _extract_text_from_csv(file_bytes: bytes, extension: str) -> tuple[str, str]:
+    """
+    Stage 2C: CSV or Excel structured data.
+    Reads with pandas, converts to a text summary for the LLM.
+    """
+    try:
+        import pandas as pd
+        if extension in (".xlsx", ".xls"):
+            df = pd.read_excel(io.BytesIO(file_bytes), nrows=50)
+        else:
+            df = pd.read_csv(io.BytesIO(file_bytes), nrows=50)
+
+        # Convert to readable text for LLM
+        summary_lines = []
+        summary_lines.append(f"Columns: {', '.join(str(c) for c in df.columns.tolist())}")
+        summary_lines.append(f"Rows: {len(df)}")
+        summary_lines.append("---")
+        # Show first 20 rows as text
+        for _, row in df.head(20).iterrows():
+            summary_lines.append(" | ".join(str(v) for v in row.values))
+        return "\n".join(summary_lines), "pandas_csv"
+    except ImportError:
+        return "", "csv_no_pandas"
+    except Exception as e:
+        logger.warning(f"CSV extraction failed: {e}")
+        return "", "csv_error"
+
+
 def _classify_document(raw_text: str) -> dict:
     """
     Ask Mistral to classify whether this is a valid bill and what type.
@@ -244,6 +277,7 @@ def _compute_stream_score_simple(
     months_covered: int,
     avg_amount: float,
     verification_level: str,
+    num_gaps: int = 0,
 ) -> int:
     """Scoring formula from BILL_AGENT_POV.md."""
     BILL_TYPE_WEIGHTS = {
@@ -263,16 +297,145 @@ def _compute_stream_score_simple(
         return 1.0
 
     tw  = BILL_TYPE_WEIGHTS.get(bill_type, 1.0)
-    con = min(months_covered / 12.0, 1.0)
+    # Consistency: penalise each gap by 5%
+    con = max(0.0, min(months_covered / 12.0, 1.0) - (num_gaps * 0.05))
     amt = amt_signal(avg_amount)
     ver = VERIFICATION_BONUS.get(verification_level, 0) / 10.0
     raw = tw * 0.35 + con * 0.40 + amt * 0.15 + ver * 0.10
     return min(100, max(0, round(raw / 1.175 * 100)))
 
 
+# ── Stage 5: Consistency Analysis helpers ─────────────────────────────────
+
+def _parse_billing_period(period_str: str) -> tuple[int, int] | None:
+    """
+    Parse a billing_period string like 'January 2024' or '2024-01'
+    into (year, month_int) for timeline ordering.
+    Returns None if unparseable.
+    """
+    if not period_str:
+        return None
+    period_str = period_str.strip()
+
+    # Try 'Month YYYY' or 'YYYY-MM'
+    import re as _re
+    # 'January 2024', 'Jan 2024'
+    m = _re.match(r'([A-Za-z]+)\s+(\d{4})', period_str)
+    if m:
+        month_str, year_str = m.group(1), m.group(2)
+        month_abbrs = {abbr.lower(): i for i, abbr in enumerate(month_abbr) if abbr}
+        month_int = month_abbrs.get(month_str[:3].lower())
+        if month_int:
+            return int(year_str), month_int
+
+    # 'YYYY-MM'
+    m = _re.match(r'(\d{4})-(\d{2})', period_str)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+
+    return None
+
+
+def _compute_consistency_analysis(periods: list[str], amounts: list[float]) -> dict:
+    """
+    Stage 5 full consistency analysis for a stream.
+
+    Given a list of billing_period strings and corresponding amounts:
+    - months_covered: how many distinct periods exist
+    - streak: longest run of consecutive calendar months
+    - num_gaps: number of missing months in the covered window
+    - variance: std deviation of amounts (0 = perfectly consistent)
+    - amount_variance_flag: True if variance > 30% of mean (suspicious)
+    """
+    if not periods:
+        return {
+            "months_covered": 0,
+            "streak": 0,
+            "num_gaps": 0,
+            "variance": 0.0,
+            "amount_variance_flag": False,
+            "timeline": [],
+        }
+
+    # Parse periods into (year, month) tuples, deduplicate
+    parsed = []
+    for p in periods:
+        ym = _parse_billing_period(p)
+        if ym:
+            parsed.append(ym)
+    parsed = sorted(set(parsed))  # unique, chronological
+
+    months_covered = len(parsed)
+
+    if months_covered == 0:
+        return {
+            "months_covered": 0,
+            "streak": 0,
+            "num_gaps": 0,
+            "variance": 0.0,
+            "amount_variance_flag": False,
+            "timeline": [],
+        }
+
+    # Build the full expected monthly timeline between min and max date
+    def next_month(y, m):
+        return (y + 1, 1) if m == 12 else (y, m + 1)
+
+    first_ym = parsed[0]
+    last_ym  = parsed[-1]
+    present_set = set(parsed)
+
+    full_timeline = []
+    cur = first_ym
+    while cur <= last_ym:
+        full_timeline.append(cur)
+        cur = next_month(*cur)
+
+    # Gaps = months in the window that are missing
+    missing = [ym for ym in full_timeline if ym not in present_set]
+    num_gaps = len(missing)
+
+    # Streak: longest consecutive run in `parsed`
+    max_streak = 1
+    cur_streak = 1
+    for i in range(1, len(parsed)):
+        expected = next_month(*parsed[i - 1])
+        if parsed[i] == expected:
+            cur_streak += 1
+            max_streak = max(max_streak, cur_streak)
+        else:
+            cur_streak = 1
+
+    # Amount variance (std dev)
+    clean_amounts = [a for a in amounts if a and a > 0]
+    if len(clean_amounts) >= 2:
+        mean_amt = sum(clean_amounts) / len(clean_amounts)
+        variance = statistics.stdev(clean_amounts)
+        # Flag if std dev > 30% of mean (wild swings = suspicious)
+        variance_flag = mean_amt > 0 and (variance / mean_amt) > 0.30
+    else:
+        variance = 0.0
+        variance_flag = False
+
+    # Human-readable timeline string: 'Jan-2024 -> Mar-2024 [gap: Feb-2024]'
+    month_names = list(month_abbr)
+    timeline_str = " -> ".join(
+        f"{month_names[m]}-{y}" for y, m in parsed
+    )
+
+    return {
+        "months_covered": months_covered,
+        "streak": max_streak,
+        "num_gaps": num_gaps,
+        "variance": round(variance, 2),
+        "amount_variance_flag": variance_flag,
+        "timeline": timeline_str,
+    }
+
+
 # ── Background processing pipeline ───────────────────────────────────────
 
-async def _process_bill(doc_id: str, file_bytes: bytes, mime_type: str, applicant_id: str):
+async def _process_bill(doc_id: str, file_bytes: bytes, mime_type: str, applicant_id: str, original_ext: str = ""):
     """
     Full 6-stage async pipeline. Runs in background after upload.
     Updates document stage at each step so frontend can show progress.
@@ -281,12 +444,17 @@ async def _process_bill(doc_id: str, file_bytes: bytes, mime_type: str, applican
         logger.error("MongoDB not available — cannot process bill")
         return
 
-    # Stage 2: Extract text
+    # ── Stage 2: Content Extraction ───────────────────────────────────────
     await update_bill_document(doc_id, {"stage": "extracting"})
     try:
         if mime_type == "application/pdf":
+            # Path A: pdfplumber (text PDF) → Path B: Mistral OCR (scanned)
             raw_text, extract_method = _extract_text_from_pdf(file_bytes)
+        elif original_ext in (".csv", ".xlsx", ".xls"):
+            # Path C: Structured CSV/Excel
+            raw_text, extract_method = _extract_text_from_csv(file_bytes, original_ext)
         else:
+            # Path B: Image → Mistral OCR
             raw_text, extract_method = _extract_text_from_image(file_bytes, mime_type)
     except Exception as e:
         logger.error(f"Text extraction failed for {doc_id}: {e}")
@@ -296,7 +464,14 @@ async def _process_bill(doc_id: str, file_bytes: bytes, mime_type: str, applican
         })
         return
 
-    # Stage 3: Classify
+    if not raw_text or len(raw_text.strip()) < 20:
+        await update_bill_document(doc_id, {
+            "stage": "rejected",
+            "rejection_reason": "Could not extract readable text from file",
+        })
+        return
+
+    # ── Stage 3: LLM Content Classification ──────────────────────────────
     await update_bill_document(doc_id, {"stage": "classifying", "extract_method": extract_method})
     classification = await asyncio.to_thread(_classify_document, raw_text)
 
@@ -317,41 +492,113 @@ async def _process_bill(doc_id: str, file_bytes: bytes, mime_type: str, applican
         })
         return
 
-    # Stage 4: Structured extraction
+    # ── Stage 4: Structured Extraction (LLM) ─────────────────────────────
     await update_bill_document(doc_id, {"stage": "extracting_fields", "classification": classification})
     extraction = await asyncio.to_thread(_extract_structured_fields, raw_text, bill_type)
     extraction["bill_type"] = bill_type
 
-    # Stage 5: Compute stream score
     verification_level = "document_uploaded"
     if mime_type in ("image/jpeg", "image/jpg", "image/png"):
         verification_level = "image_uploaded"
 
-    months_covered = 1  # Single bill = 1 month
-    amount = extraction.get("amount") or 0
-    stream_score = _compute_stream_score_simple(bill_type, months_covered, amount, verification_level)
+    # ── Stage 5: Consistency Analysis ────────────────────────────────────
+    # Fetch all previously processed bills for this applicant+bill_type+payee
+    # to compute the true multi-month consistency timeline.
+    await update_bill_document(doc_id, {"stage": "analyzing_consistency"})
 
-    bill_label = bill_type.replace("_", " ").title()
     payee = extraction.get("payee_name") or "Unknown"
-    reason = (
-        f"{bill_label} bill from {payee}. "
-        f"Amount: ₹{amount:,.0f}. "
-        f"Period: {extraction.get('billing_period') or 'unspecified'}. "
-        f"Stream score: {stream_score}/100."
+    amount = extraction.get("amount") or 0
+    billing_period = extraction.get("billing_period") or datetime.now().strftime("%B %Y")
+
+    try:
+        db = get_mongo_db()
+        # Load all scored docs for same applicant + bill_type + payee
+        existing_cursor = db.bill_documents.find(
+            {
+                "applicant_id": applicant_id,
+                "stage": "scored",
+                "extraction.bill_type": bill_type,
+                "extraction.payee_name": payee,
+            },
+            {"extraction.billing_period": 1, "extraction.amount": 1}
+        )
+        existing_docs = [d async for d in existing_cursor]
+
+        # Collect all periods + amounts (include current bill being processed)
+        all_periods = [billing_period]
+        all_amounts = [amount] if amount else []
+        for d in existing_docs:
+            extr = d.get("extraction") or {}
+            p = extr.get("billing_period")
+            a = extr.get("amount")
+            if p:
+                all_periods.append(p)
+            if a:
+                all_amounts.append(float(a))
+
+        # Run full consistency analysis (streak, gaps, variance)
+        consistency = _compute_consistency_analysis(all_periods, all_amounts)
+
+    except Exception as e:
+        logger.warning(f"Consistency analysis failed: {e} — using single-bill baseline")
+        consistency = {
+            "months_covered": 1,
+            "streak": 1,
+            "num_gaps": 0,
+            "variance": 0.0,
+            "amount_variance_flag": False,
+            "timeline": billing_period,
+        }
+
+    months_covered = consistency["months_covered"]
+    streak         = consistency["streak"]
+    num_gaps       = consistency["num_gaps"]
+    variance       = consistency["variance"]
+    variance_flag  = consistency["amount_variance_flag"]
+
+    # ── Stage 6: Scoring + Reason Generation ─────────────────────────────
+    stream_score = _compute_stream_score_simple(
+        bill_type=bill_type,
+        months_covered=months_covered,
+        avg_amount=sum(all_amounts) / len(all_amounts) if all_amounts else amount,
+        verification_level=verification_level,
+        num_gaps=num_gaps,
     )
 
-    # Stage 6: Save final scored document
+    # Build rich human-readable reason
+    bill_label = bill_type.replace("_", " ").title()
+    reason_parts = [
+        f"{bill_label} — {payee}.",
+        f"{months_covered} month(s) covered (streak: {streak} consecutive).",
+        f"Avg ₹{(sum(all_amounts)/len(all_amounts) if all_amounts else amount):,.0f}/mo.",
+    ]
+    if num_gaps > 0:
+        reason_parts.append(f"⚠ {num_gaps} gap(s) detected in payment timeline.")
+    if variance_flag:
+        reason_parts.append(f"⚠ High amount variance (σ=₹{variance:,.0f}) — flagged for review.")
+    reason_parts.append(f"Stream score: {stream_score}/100.")
+    reason = " ".join(reason_parts)
+
+    # Determine flags
+    flags = []
+    if num_gaps > 0:
+        flags.append({"type": "payment_gaps", "detail": f"{num_gaps} missing month(s)"})
+    if variance_flag:
+        flags.append({"type": "amount_variance", "detail": f"std dev ₹{variance:,.0f}"})
+
+    # Save fully scored document
     await update_bill_document(doc_id, {
         "stage": "scored",
-        "ocr_raw_text": raw_text[:5000],    # store truncated for reference
+        "ocr_raw_text": raw_text[:5000],
         "extraction": extraction,
         "verification_level": verification_level,
         "stream_score": stream_score,
         "reason": reason,
+        "flags": flags,
+        "consistency": consistency,    # full Stage 5 data persisted
     })
 
-    # Upsert bill stream (aggregated consistency for this bill_type + payee)
-    billing_period = extraction.get("billing_period") or datetime.now().strftime("%B %Y")
+    # Upsert bill_stream with full consistency data
     await upsert_bill_stream(
         applicant_id=applicant_id,
         bill_type=bill_type,
@@ -361,8 +608,15 @@ async def _process_bill(doc_id: str, file_bytes: bytes, mime_type: str, applican
             "last_period": billing_period,
             "last_score": stream_score,
             "last_reason": reason,
-            "doc_count": 1,         # upsert will increment via $inc in future
+            "doc_count": len(existing_docs) + 1,
             "verification_level": verification_level,
+            # Stage 5 consistency data
+            "months_covered": months_covered,
+            "streak": streak,
+            "num_gaps": num_gaps,
+            "amount_variance": round(variance, 2),
+            "amount_variance_flag": variance_flag,
+            "timeline": consistency.get("timeline", ""),
         },
     )
 
@@ -371,8 +625,14 @@ async def _process_bill(doc_id: str, file_bytes: bytes, mime_type: str, applican
         "bill_type": bill_type,
         "stream_score": stream_score,
         "payee": payee,
+        "months_covered": months_covered,
+        "streak": streak,
+        "num_gaps": num_gaps,
     })
-    logger.info(f"Bill {doc_id} processed successfully — {bill_type}, score={stream_score}")
+    logger.info(
+        f"Bill {doc_id} processed — {bill_type}, score={stream_score}, "
+        f"months={months_covered}, streak={streak}, gaps={num_gaps}"
+    )
 
 
 # ── Routes ────────────────────────────────────────────────────────────────
@@ -484,7 +744,7 @@ async def upload_bill(
 
     # ── Launch async processing pipeline ─────────────────────────────────
     background_tasks.add_task(
-        _process_bill, doc_id, file_bytes, mime_type, applicant_id
+        _process_bill, doc_id, file_bytes, mime_type, applicant_id, ext
     )
 
     return {
