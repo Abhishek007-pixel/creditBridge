@@ -69,7 +69,13 @@ SCORE_BANDS = {
 
 # ── Demo users (hardcoded for hackathon) ─────────────────────────────────
 DEMO_USERS = {
+    # Username-based (old frontend)
     "applicant":   {"password": "password123", "role": "applicant"},
     "bankofficer": {"password": "bankpass123",  "role": "officer"},
     "admin":       {"password": "admin123",     "role": "admin"},
+    # Email-based (frontend2 quick-login buttons)
+    "priya@creditbridge.com":   {"password": "password123", "role": "applicant", "name": "Priya Sharma",     "uid": "demo-priya-002"},
+    "ravi@creditbridge.com":    {"password": "password123", "role": "applicant", "name": "Ravi Kumar",       "uid": "demo-ravi-001"},
+    "officer@creditbridge.com": {"password": "bankpass123",  "role": "officer",   "name": "UCO Bank Officer", "uid": "demo-officer-001"},
+    "admin@creditbridge.com":   {"password": "admin123",     "role": "admin",     "name": "Global Admin",    "uid": "demo-admin-001"},
 }

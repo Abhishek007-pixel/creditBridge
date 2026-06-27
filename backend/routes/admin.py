@@ -1,5 +1,5 @@
 """
-Admin panel routes — weight configuration and analytics.
+Admin panel routes — weight configuration, analytics, and status management.
 """
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
@@ -12,6 +12,11 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 class WeightUpdateRequest(BaseModel):
     weights: dict[str, float]
+
+
+class StatusUpdateRequest(BaseModel):
+    status: str          # "approved" or "rejected"
+    decided_by: Optional[str] = None
 
 
 def require_admin(authorization: Optional[str] = None):
@@ -90,3 +95,60 @@ def get_analytics(authorization: Optional[str] = Header(None)):
         "risk_distribution": {r["risk_category"]: r["count"] for r in risk_dist},
         "pipeline_distribution": {r["pipeline_mode"]: r["count"] for r in pipeline_dist},
     }
+
+
+@router.post("/applicants/{applicant_id}/status")
+def update_applicant_status(
+    applicant_id: str,
+    req: StatusUpdateRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """Bank officer approves or rejects a scored applicant."""
+    if req.status not in ("approved", "rejected", "pending"):
+        raise HTTPException(status_code=400, detail="status must be 'approved', 'rejected', or 'pending'")
+    with get_db() as conn:
+        # Try updating with status column; if column doesn't exist, skip gracefully
+        try:
+            conn.execute(
+                "UPDATE credit_scores SET status = ? WHERE applicant_id = ?",
+                (req.status, applicant_id)
+            )
+            conn.commit()
+        except Exception as e:
+            # Column may not exist yet in existing DB — ALTER TABLE to add it
+            try:
+                conn.execute("ALTER TABLE credit_scores ADD COLUMN status TEXT DEFAULT 'pending'")
+                conn.execute(
+                    "UPDATE credit_scores SET status = ? WHERE applicant_id = ?",
+                    (req.status, applicant_id)
+                )
+                conn.commit()
+            except Exception:
+                pass
+    log_audit(applicant_id, f"STATUS_{req.status.upper()}", {"decided_by": req.decided_by})
+    return {"success": True, "status": req.status}
+
+
+@router.get("/audit")
+def get_all_audit_logs(authorization: Optional[str] = Header(None)):
+    """Get global audit trail for admin panel. Returns all system events."""
+    import json
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT id, applicant_id, action, metadata, timestamp
+               FROM audit_log ORDER BY timestamp DESC LIMIT 500"""
+        ).fetchall()
+    logs = []
+    for r in rows:
+        try:
+            meta = json.loads(r["metadata"]) if r["metadata"] else {}
+        except Exception:
+            meta = r["metadata"]
+        logs.append({
+            "id": r["id"],
+            "applicant_id": r["applicant_id"],
+            "action": r["action"],
+            "metadata": meta,
+            "timestamp": r["timestamp"],
+        })
+    return {"logs": logs}

@@ -39,21 +39,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, onLogout }) => {
   // Calculate sum of current weights
   const weightsSum = (Object.values(weights) as number[]).reduce((a, b) => a + b, 0);
 
-  // Sync current weights & Global stats/logs (Mocked fetch)
+  // Sync current weights & Global stats/logs from Python backend
   useEffect(() => {
     const fetchAdminData = async () => {
       setLoading(true);
       try {
         const token = localStorage.getItem('token');
-        const res = await fetch('http://localhost:3001/api/admin/data', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.weights) setWeights(data.weights);
-          if (data.logs) setGlobalLogs(data.logs);
-          if (data.analytics) setAnalytics(data.analytics);
+        const headers = { 'Authorization': `Bearer ${token}` };
+
+        // Two parallel calls: Python has separate /analytics and /weights endpoints
+        const [analyticsRes, weightsRes, auditRes] = await Promise.all([
+          fetch('/api/admin/analytics', { headers }),
+          fetch('/api/admin/weights',   { headers }),
+          fetch('/api/admin/audit',     { headers }),
+        ]);
+
+        if (analyticsRes.ok) {
+          const ana = await analyticsRes.json();
+          setAnalytics({
+            totalApplicants: ana.total_applicants ?? 0,
+            averageRating:   ana.average_score ?? 0,
+            riskDistribution: Object.entries(ana.risk_distribution || {})
+              .map(([name, value]) => ({ name, value: value as number })),
+            consentPenetration: [],
+          });
         }
+
+        if (weightsRes.ok) {
+          const wd = await weightsRes.json();
+          if (wd.weights) {
+            const pct: any = {};
+            for (const k in wd.weights) pct[k] = Math.round(wd.weights[k] * 100);
+            setWeights(pct);
+          }
+        }
+
+        if (auditRes.ok) {
+          const ad = await auditRes.json();
+          setGlobalLogs(ad.logs || []);
+        }
+
       } catch (e) {
         console.error(e);
       } finally {
@@ -87,8 +112,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ user, onLogout }) => {
         normDecimal[k] = weights[k] / 100;
       }
       const token = localStorage.getItem('token');
-      await fetch('http://localhost:3001/api/admin/weights', {
-        method: 'POST',
+      await fetch('/api/admin/weights', {
+        method: 'PUT',   // Python expects PUT, not POST
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`

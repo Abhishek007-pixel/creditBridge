@@ -49,7 +49,7 @@ export const ApplicantPortal: React.FC<ApplicantPortalProps> = ({ user, onLogout
         const token = localStorage.getItem('token');
         if (!token) return;
 
-        const res = await fetch('http://localhost:3001/api/me', {
+        const res = await fetch('/api/me', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
@@ -93,35 +93,55 @@ export const ApplicantPortal: React.FC<ApplicantPortalProps> = ({ user, onLogout
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      await fetch('http://localhost:3001/api/applicants', {
+      // Save consent to Python backend so agents can read consented sources
+      await fetch('/api/consent', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          name: profile.name,
-          email: profile.email,
-          phone: profile.phone,
-          aadhaar_last4: profile.aadhaar_last4,
-          aadhaar_hash: btoa(`cb-aadhaar-${profile.aadhaar_last4}`).slice(0, 15)
+          applicant_id: user.uid,
+          phone_bill: consents.phone_bill,
+          ecommerce: consents.ecommerce,
+          geolocation: consents.geolocation,
+          merchant: consents.merchant,
+          cashflow: consents.cashflow,
         })
       });
       setStep(2);
     } catch (err) {
       console.error(err);
+      setStep(2); // proceed even if consent save fails
     } finally {
       setLoading(false);
     }
   };
 
+
   const handleSaveConsent = async () => {
     setLoading(true);
-    // Simulating save to simplify backend (in prod, this posts to /api/consents)
-    setTimeout(() => {
+    try {
+      const token = localStorage.getItem('token');
+      // Save updated consent flags before moving to questionnaire
+      await fetch('/api/consent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          applicant_id: user.uid,
+          phone_bill: consents.phone_bill,
+          ecommerce: consents.ecommerce,
+          geolocation: consents.geolocation,
+          merchant: consents.merchant,
+          cashflow: consents.cashflow,
+        })
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
       setLoading(false);
       setStep(3);
-    }, 500);
+    }
   };
 
   const handleSelectAnswer = (qIdx: number, choiceIdx: number) => {
@@ -134,33 +154,44 @@ export const ApplicantPortal: React.FC<ApplicantPortalProps> = ({ user, onLogout
     if (answers.includes(-1)) return;
     setLoading(true);
     try {
-      const consentedKeys = Object.keys(consents).filter(k => consents[k]);
-      const resultReport = evaluateCreditScore(user.uid, consentedKeys, answers);
-
       const token = localStorage.getItem('token');
-      await fetch('http://localhost:3001/api/scores', {
+
+      // POST only answers to Python — let Neuro SAN agents compute the score
+      const res = await fetch('/api/score', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          final_score: resultReport.final_score,
-          risk_category: resultReport.risk_category,
-          decision: resultReport.decision,
-          loan_recommended: resultReport.loan_recommended,
-          interest_rate: resultReport.interest_rate,
-          explanation: resultReport.explanation,
-          breakdown: resultReport.breakdown,
-          weights_used: resultReport.weights_used,
-          status: status === "none" ? "pending" : status
+          applicant_id: user.uid,
+          questionnaire_answers: answers,  // 10 psychometric answer indices [0-3]
         })
       });
 
-      setReport(resultReport);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || `Score API error ${res.status}`);
+      }
+
+      const resultReport = await res.json();
+      // resultReport shape from Python: {final_score, risk_category, loan_recommended,
+      //   interest_rate, explanation, breakdown, weights_used, pipeline_mode, ...}
+      setReport({
+        final_score: resultReport.final_score,
+        risk_category: resultReport.risk_category,
+        decision: resultReport.risk_category,
+        loan_recommended: resultReport.loan_recommended,
+        interest_rate: resultReport.interest_rate,
+        weighted_average: resultReport.final_score || 0,
+        breakdown: resultReport.breakdown || {},
+        weights_used: resultReport.weights_used || {},
+        explanation: resultReport.explanation,
+      });
       setStep(4);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      console.error('Score submission error:', e);
+      alert(`Scoring failed: ${e.message}. Check that the Python backend is running on port 8000.`);
     } finally {
       setLoading(false);
     }
