@@ -17,6 +17,7 @@ from routes.cashflow import router as cashflow_router
 from routes.ecommerce import router as ecommerce_router
 from routes.commitments import router as commitments_router
 from routes.merchant import router as merchant_router
+from routes.geolocation import router as geolocation_router
 from config import DEBUG
 
 logging.basicConfig(
@@ -57,6 +58,7 @@ app.include_router(cashflow_router)
 app.include_router(ecommerce_router)
 app.include_router(commitments_router)
 app.include_router(merchant_router)
+app.include_router(geolocation_router)
 
 
 @app.on_event("startup")

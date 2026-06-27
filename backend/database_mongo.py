@@ -145,6 +145,12 @@ async def _create_indexes():
     await db.merchant_references.create_index("applicant_id")
     await db.merchant_references.create_index("verified_status")
 
+    # ── aadhaar_addresses ────────────────────────────────────────────────
+    await db.aadhaar_addresses.create_index("applicant_id")
+
+    # ── gps_verifications ────────────────────────────────────────────────
+    await db.gps_verifications.create_index("applicant_id")
+
     logger.info("MongoDB indexes created/verified.")
 
 
@@ -522,6 +528,26 @@ async def update_merchant_reference(doc_id: str, update: dict) -> bool:
         {"$set": {**update, "updated_at": datetime.now(timezone.utc)}}
     )
     return result.modified_count > 0
+
+
+# ── geolocation helpers ────────────────────────────────────────────────────
+
+async def create_aadhaar_address(doc: dict) -> str:
+    """Insert a new Aadhaar address parsing record."""
+    db = get_mongo_db()
+    doc.setdefault("upload_timestamp", datetime.now(timezone.utc))
+    doc.setdefault("stage", "scored")
+    result = await db.aadhaar_addresses.insert_one(doc)
+    return str(result.inserted_id)
+
+
+async def create_gps_verification(doc: dict) -> str:
+    """Insert a new Live GPS location capture record."""
+    db = get_mongo_db()
+    doc.setdefault("timestamp", datetime.now(timezone.utc))
+    result = await db.gps_verifications.insert_one(doc)
+    return str(result.inserted_id)
+
 
 
 

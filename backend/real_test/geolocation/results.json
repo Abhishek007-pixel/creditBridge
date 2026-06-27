@@ -1,0 +1,19 @@
+{
+  "source": "geolocation",
+  "applicant_id": "test_geo_applicant",
+  "score": 100,
+  "preliminary_score": 100,
+  "reason": "Aadhaar registered city: New Delhi. Bank statement city: Delhi. Live location: Delhi. Device matches verified permanent coordinates within 0.0 km.",
+  "preliminary_reason": "Aadhaar registered city: New Delhi. Bank statement city: Delhi. Live location: Delhi. Device matches verified permanent coordinates within 0.0 km.",
+  "metrics": {
+    "document_alignment_score": 40,
+    "presence_proximity_score": 40,
+    "stability_score": 20,
+    "haversine_distance_km": 0.0,
+    "aadhaar_city": "New Delhi",
+    "bank_city": "Delhi",
+    "gps_city": "Delhi"
+  },
+  "data_source": "mongodb",
+  "status": "success"
+}
