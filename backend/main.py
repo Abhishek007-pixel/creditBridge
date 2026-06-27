@@ -12,6 +12,7 @@ from routes.applicant import router as applicant_router
 from routes.scoring import router as scoring_router
 from routes.reports import router as reports_router
 from routes.admin import router as admin_router
+from routes.bills import router as bills_router
 from config import DEBUG
 
 logging.basicConfig(
@@ -47,6 +48,7 @@ app.include_router(applicant_router)
 app.include_router(scoring_router)
 app.include_router(reports_router)
 app.include_router(admin_router)
+app.include_router(bills_router)
 
 
 @app.on_event("startup")

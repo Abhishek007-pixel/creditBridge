@@ -92,17 +92,31 @@ def init_db():
         cursor = conn.execute("SELECT COUNT(*) FROM agent_weights")
         if cursor.fetchone()[0] == 0:
             weights = [
-                ("phone_bill",   0.25),
-                ("cashflow",     0.20),
-                ("psychometric", 0.20),
-                ("geolocation",  0.15),
-                ("ecommerce",    0.12),
-                ("merchant",     0.08),
+                ("bill_consistency", 0.25),   # new — replaces phone_bill
+                ("cashflow",         0.20),
+                ("psychometric",     0.20),
+                ("geolocation",      0.15),
+                ("ecommerce",        0.12),
+                ("merchant",         0.08),
             ]
             conn.executemany(
                 "INSERT INTO agent_weights (agent_name, weight) VALUES (?, ?)",
                 weights
             )
+        else:
+            # Migration: rename phone_bill -> bill_consistency if it exists
+            conn.execute(
+                "UPDATE agent_weights SET agent_name = 'bill_consistency' "
+                "WHERE agent_name = 'phone_bill'"
+            )
+            # Insert bill_consistency if neither key exists yet
+            existing = [r[0] for r in conn.execute(
+                "SELECT agent_name FROM agent_weights"
+            ).fetchall()]
+            if "bill_consistency" not in existing:
+                conn.execute(
+                    "INSERT INTO agent_weights (agent_name, weight) VALUES ('bill_consistency', 0.25)"
+                )
         conn.commit()
 
         # Migration: add status column to credit_scores if not present (for existing DBs)

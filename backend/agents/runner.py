@@ -53,14 +53,23 @@ def run_synthetic_pipeline(
     Pure synthetic scoring pipeline.
     Always deterministic, always works, no API key needed.
     Used when USE_AGENTS=false or as automatic fallback.
+
+    Accepts both 'phone_bill' (legacy) and 'bill_consistency' (new)
+    as consent source names — both map to the bill consistency score.
     """
     weights = get_agent_weights()
     data = generate_applicant_data(applicant_id)
     agent_scores = {}
 
-    if "phone_bill" in consented_sources:
+    # bill_consistency replaces phone_bill — accept both names for backward compat
+    has_bill_consent = (
+        "bill_consistency" in consented_sources or
+        "phone_bill" in consented_sources
+    )
+    if has_bill_consent:
         s, r = score_phone_bill(data["phone_bill"])
-        agent_scores["phone_bill"] = (s, r)
+        # Store under bill_consistency key (canonical)
+        agent_scores["bill_consistency"] = (s, r)
 
     if "ecommerce" in consented_sources:
         s, r = score_ecommerce(data["ecommerce"])
@@ -82,7 +91,15 @@ def run_synthetic_pipeline(
         s, r = score_cashflow(data["cashflow"])
         agent_scores["cashflow"] = (s, r)
 
-    active_weights = {k: v for k, v in weights.items() if k in agent_scores}
+    # Update weights to use bill_consistency key
+    updated_weights = {}
+    for k, v in weights.items():
+        if k == "phone_bill":
+            updated_weights["bill_consistency"] = v
+        else:
+            updated_weights[k] = v
+
+    active_weights = {k: v for k, v in updated_weights.items() if k in agent_scores}
     result = calculate_final_score(agent_scores, active_weights, list(agent_scores.keys()))
     result["pipeline_mode"] = "synthetic"
     result["applicant_id"] = applicant_id
