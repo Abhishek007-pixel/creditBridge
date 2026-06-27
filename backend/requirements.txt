@@ -10,3 +10,5 @@ neuro-san>=0.5.66
 requests>=2.31.0
 geopy>=2.4.1
 httpx>=0.28.1
+motor>=3.7.1
+pymongo>=4.17.0

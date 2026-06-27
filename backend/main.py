@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
+from database_mongo import init_mongo, close_mongo
 from routes.applicant import router as applicant_router
 from routes.scoring import router as scoring_router
 from routes.reports import router as reports_router
@@ -49,11 +50,23 @@ app.include_router(admin_router)
 
 
 @app.on_event("startup")
-def startup():
-    """Initialize database on server start."""
+async def startup():
+    """Initialize SQLite + MongoDB on server start."""
     logger.info("CreditBridge API starting up...")
     init_db()
-    logger.info("Database initialized")
+    logger.info("SQLite database initialized")
+    mongo_ok = await init_mongo()
+    if mongo_ok:
+        logger.info("MongoDB Atlas ready")
+    else:
+        logger.warning("MongoDB Atlas unavailable — Bill Agent features disabled")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    """Clean up connections on server stop."""
+    await close_mongo()
+    logger.info("CreditBridge API shut down cleanly")
 
 
 @app.get("/")
