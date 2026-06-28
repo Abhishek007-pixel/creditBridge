@@ -151,6 +151,13 @@ async def _create_indexes():
     # ── gps_verifications ────────────────────────────────────────────────
     await db.gps_verifications.create_index("applicant_id")
 
+    # ── users ────────────────────────────────────────────────────────────
+    await db.users.create_index("email", unique=True)
+    await db.users.create_index("uid", unique=True)
+
+    # ── questionnaire_responses ──────────────────────────────────────────
+    await db.questionnaire_responses.create_index("applicant_id")
+
     logger.info("MongoDB indexes created/verified.")
 
 
@@ -547,6 +554,46 @@ async def create_gps_verification(doc: dict) -> str:
     doc.setdefault("timestamp", datetime.now(timezone.utc))
     result = await db.gps_verifications.insert_one(doc)
     return str(result.inserted_id)
+
+
+# ── users and questionnaire_responses helpers ─────────────────────────────
+
+async def get_user_from_mongo(email_or_username: str) -> Optional[dict]:
+    """Retrieve user details from MongoDB by email or username."""
+    if not is_mongo_available():
+        return None
+    db = get_mongo_db()
+    # Accept either username or email
+    user = await db.users.find_one({
+        "$or": [
+            {"email": email_or_username},
+            {"username": email_or_username}
+        ]
+    })
+    if user:
+        user["_id"] = str(user["_id"])
+    return user
+
+
+async def create_user_in_mongo(user_doc: dict) -> str:
+    """Insert a new user (applicant, officer, admin) record into MongoDB users collection."""
+    db = get_mongo_db()
+    user_doc.setdefault("created_at", datetime.now(timezone.utc))
+    result = await db.users.insert_one(user_doc)
+    return str(result.inserted_id)
+
+
+async def save_questionnaire_response_mongo(applicant_id: str, answers: list) -> str:
+    """Save questionnaire responses in MongoDB Atlas."""
+    db = get_mongo_db()
+    doc = {
+        "applicant_id": applicant_id,
+        "answers": answers,
+        "submitted_at": datetime.now(timezone.utc)
+    }
+    result = await db.questionnaire_responses.insert_one(doc)
+    return str(result.inserted_id)
+
 
 
 

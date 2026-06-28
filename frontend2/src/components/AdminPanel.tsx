@@ -15,12 +15,13 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ user, onLogout }) => {
   const [weights, setWeights] = useState<{ [key: string]: number }>({
-    phone_bill: 25,
+    bill_consistency: 20,
     cashflow: 20,
-    psychometric: 20,
-    geolocation: 15,
-    ecommerce: 12,
-    merchant: 8
+    financial_commitment: 18,
+    psychometric: 15,
+    geolocation: 12,
+    ecommerce: 10,
+    merchant: 5
   });
 
   const [loading, setLoading] = useState<boolean>(false);

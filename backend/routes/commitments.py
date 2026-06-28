@@ -209,3 +209,17 @@ async def upload_financial_commitment(
         "doc_id": doc_id,
         "stage": "uploaded",
     }
+
+
+@router.get("/{applicant_id}")
+async def get_financial_commitments(applicant_id: str):
+    """Retrieve all financial commitments for an applicant from MongoDB."""
+    if not is_mongo_available():
+        return []
+    from database_mongo import get_financial_commitments_for_applicant
+    try:
+        return await get_financial_commitments_for_applicant(applicant_id)
+    except Exception as e:
+        logger.warning(f"Failed to fetch commitments: {e}")
+        return []
+

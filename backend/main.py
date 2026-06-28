@@ -24,6 +24,8 @@ logging.basicConfig(
     level=logging.DEBUG if DEBUG else logging.INFO,
     format="%(asctime)s — %(name)s — %(levelname)s — %(message)s"
 )
+logging.getLogger("pymongo").setLevel(logging.WARNING)
+logging.getLogger("motor").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(

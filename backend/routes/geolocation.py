@@ -225,3 +225,32 @@ async def verify_gps(payload: GPSVerifyRequest):
         "resolved_city": resolved["city"],
         "resolved_pin_code": resolved["pin_code"]
     }
+
+
+@router.get("/{applicant_id}")
+async def get_geolocation_data(applicant_id: str):
+    """Retrieve all geolocation data (Aadhaar scan metadata + GPS checks) from MongoDB."""
+    if not is_mongo_available():
+        return {"aadhaar_addresses": [], "gps_verifications": []}
+    db = get_mongo_db()
+    try:
+        aadhaar_cursor = db.aadhaar_addresses.find({"applicant_id": applicant_id})
+        aadhaar_docs = []
+        async for doc in aadhaar_cursor:
+            doc["_id"] = str(doc["_id"])
+            aadhaar_docs.append(doc)
+
+        gps_cursor = db.gps_verifications.find({"applicant_id": applicant_id})
+        gps_docs = []
+        async for doc in gps_cursor:
+            doc["_id"] = str(doc["_id"])
+            gps_docs.append(doc)
+
+        return {
+            "aadhaar_addresses": aadhaar_docs,
+            "gps_verifications": gps_docs
+        }
+    except Exception as e:
+        logger.warning(f"Failed to fetch geolocation data: {e}")
+        return {"aadhaar_addresses": [], "gps_verifications": []}
+

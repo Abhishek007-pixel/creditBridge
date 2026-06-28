@@ -61,7 +61,7 @@ async def test_coded_tools():
 
     all_ok = True
     tools = [
-        ("coded_tools.creditbridge.phone_bill_tool", "PhoneBillScoringTool"),
+        ("coded_tools.creditbridge.bill_consistency_tool", "BillConsistencyScoringTool"),
         ("coded_tools.creditbridge.ecommerce_tool", "EcommerceScoringTool"),
         ("coded_tools.creditbridge.geolocation_tool", "GeolocationScoringTool"),
         ("coded_tools.creditbridge.merchant_tool", "MerchantScoringTool"),

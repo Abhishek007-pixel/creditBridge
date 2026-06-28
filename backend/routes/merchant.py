@@ -306,3 +306,32 @@ async def verify_reference(payload: VerifyReferenceRequest):
         "status": "success",
         "message": f"Reference updated to status: {payload.verified_status} with rating: {payload.rating}"
     }
+
+
+@router.get("/{applicant_id}")
+async def get_merchant_data(applicant_id: str):
+    """Retrieve GST filings and merchant references for an applicant from MongoDB."""
+    if not is_mongo_available():
+        return {"gstn_filings": [], "merchant_references": []}
+    db = get_mongo_db()
+    try:
+        gstn_cursor = db.gstn_filings.find({"applicant_id": applicant_id})
+        gstn_docs = []
+        async for doc in gstn_cursor:
+            doc["_id"] = str(doc["_id"])
+            gstn_docs.append(doc)
+
+        ref_cursor = db.merchant_references.find({"applicant_id": applicant_id})
+        ref_docs = []
+        async for doc in ref_cursor:
+            doc["_id"] = str(doc["_id"])
+            ref_docs.append(doc)
+
+        return {
+            "gstn_filings": gstn_docs,
+            "merchant_references": ref_docs
+        }
+    except Exception as e:
+        logger.warning(f"Failed to fetch merchant data: {e}")
+        return {"gstn_filings": [], "merchant_references": []}
+

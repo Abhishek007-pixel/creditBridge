@@ -209,3 +209,17 @@ async def upload_ecommerce_invoice(
         "doc_id": doc_id,
         "stage": "uploaded",
     }
+
+
+@router.get("/{applicant_id}")
+async def get_ecommerce_invoices(applicant_id: str):
+    """Retrieve all e-commerce invoices for an applicant from MongoDB."""
+    if not is_mongo_available():
+        return []
+    from database_mongo import get_ecommerce_invoices_for_applicant
+    try:
+        return await get_ecommerce_invoices_for_applicant(applicant_id)
+    except Exception as e:
+        logger.warning(f"Failed to fetch ecommerce invoices: {e}")
+        return []
+
