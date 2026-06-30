@@ -204,6 +204,7 @@ export const ApplicantPortal: React.FC<ApplicantPortalProps> = ({ user, onLogout
           email: profile.email,
           phone: profile.phone,
           aadhaar_last4: profile.aadhaar_last4,
+          uid: user?.uid,
         })
       });
       setStep(2);

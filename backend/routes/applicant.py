@@ -37,6 +37,7 @@ class RegisterRequest(BaseModel):
     phone: str
     email: str
     aadhaar_last4: str
+    uid: Optional[str] = None
 
 class ConsentRequest(BaseModel):
     applicant_id: str
@@ -293,12 +294,17 @@ async def register(req: RegisterRequest):
     if len(req.aadhaar_last4) != 4 or not req.aadhaar_last4.isdigit():
         raise HTTPException(status_code=400, detail="aadhaar_last4 must be exactly 4 digits")
 
-    applicant_id = new_id()
+    applicant_id = req.uid if req.uid else new_id()
     with get_db() as conn:
         conn.execute(
             """INSERT INTO applicants
                (id, name, phone_encrypted, email_encrypted, aadhaar_hash)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET 
+                 name=excluded.name, 
+                 phone_encrypted=excluded.phone_encrypted, 
+                 email_encrypted=excluded.email_encrypted, 
+                 aadhaar_hash=excluded.aadhaar_hash""",
             (
                 applicant_id,
                 req.name,
