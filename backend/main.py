@@ -7,16 +7,25 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
+from database_mongo import init_mongo, close_mongo
 from routes.applicant import router as applicant_router
 from routes.scoring import router as scoring_router
 from routes.reports import router as reports_router
 from routes.admin import router as admin_router
+from routes.bills import router as bills_router
+from routes.cashflow import router as cashflow_router
+from routes.ecommerce import router as ecommerce_router
+from routes.commitments import router as commitments_router
+from routes.merchant import router as merchant_router
+from routes.geolocation import router as geolocation_router
 from config import DEBUG
 
 logging.basicConfig(
     level=logging.DEBUG if DEBUG else logging.INFO,
     format="%(asctime)s — %(name)s — %(levelname)s — %(message)s"
 )
+logging.getLogger("pymongo").setLevel(logging.WARNING)
+logging.getLogger("motor").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -46,14 +55,32 @@ app.include_router(applicant_router)
 app.include_router(scoring_router)
 app.include_router(reports_router)
 app.include_router(admin_router)
+app.include_router(bills_router)
+app.include_router(cashflow_router)
+app.include_router(ecommerce_router)
+app.include_router(commitments_router)
+app.include_router(merchant_router)
+app.include_router(geolocation_router)
 
 
 @app.on_event("startup")
-def startup():
-    """Initialize database on server start."""
+async def startup():
+    """Initialize SQLite + MongoDB on server start."""
     logger.info("CreditBridge API starting up...")
     init_db()
-    logger.info("Database initialized")
+    logger.info("SQLite database initialized")
+    mongo_ok = await init_mongo()
+    if mongo_ok:
+        logger.info("MongoDB Atlas ready")
+    else:
+        logger.warning("MongoDB Atlas unavailable — Bill Agent features disabled")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    """Clean up connections on server stop."""
+    await close_mongo()
+    logger.info("CreditBridge API shut down cleanly")
 
 
 @app.get("/")

@@ -1,0 +1,39 @@
+{
+  "source": "bill_consistency",
+  "applicant_id": "karan",
+  "streams": [
+    {
+      "bill_type": "electricity",
+      "payee_name": "BANGALORE ELECTRICITY SUPPLY COMPANY (BESCOM)",
+      "months_covered": 2,
+      "avg_amount": 1325.0,
+      "verification_level": "document_uploaded",
+      "stream_score": 47,
+      "reason": "Electricity payments to BANGALORE ELECTRICITY SUPPLY COMPANY (BESCOM) \u2014 2 month(s) covered, avg \u20b91,325/mo. Verification: document_uploaded."
+    },
+    {
+      "bill_type": "rent_receipt",
+      "payee_name": null,
+      "months_covered": 0,
+      "avg_amount": 0.0,
+      "verification_level": "document_uploaded",
+      "stream_score": 53,
+      "reason": "Rent Receipt payments to None \u2014 0 month(s) covered, avg \u20b90/mo. Verification: document_uploaded."
+    },
+    {
+      "bill_type": "rent_receipt",
+      "payee_name": "Rajan Properties",
+      "months_covered": 6,
+      "avg_amount": 8500.0,
+      "verification_level": "document_uploaded",
+      "stream_score": 77,
+      "reason": "Rent Receipt payments to Rajan Properties \u2014 6 month(s) covered, avg \u20b98,500/mo. Verification: document_uploaded."
+    }
+  ],
+  "final_bill_score": 65,
+  "reason": "3 bill stream(s) across 2 type(s). Top: Rent Receipt \u2014 6 months consistent (score 77/100). Diversity bonus applied.",
+  "bills_uploaded": 9,
+  "streams_count": 3,
+  "data_source": "mongodb",
+  "status": "success"
+}

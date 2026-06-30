@@ -4,19 +4,20 @@
 #
 # Agent topology:
 #   credit_coordinator (frontman)
-#     ├── phone_bill_agent      → PhoneBillScoringTool
-#     ├── ecommerce_agent       → EcommerceScoringTool
-#     ├── geolocation_agent     → GeolocationScoringTool
-#     ├── psychometric_agent    → (pure LLM, no tool)
-#     ├── merchant_agent        → MerchantScoringTool
-#     ├── cashflow_agent        → CashflowScoringTool
-#     ├── risk_synthesizer      → (pure LLM, combines all scores)
-#     └── score_explainer       → (pure LLM, plain-language output)
+#     ├── bill_consistency_agent → BillConsistencyScoringTool  (replaces phone_bill_agent)
+#     ├── ecommerce_agent        → EcommerceScoringTool
+#     ├── geolocation_agent      → GeolocationScoringTool
+#     ├── psychometric_agent     → (pure LLM, no tool)
+#     ├── merchant_agent         → MerchantScoringTool
+#     ├── cashflow_agent         → CashflowScoringTool
+#     ├── risk_synthesizer       → (pure LLM, combines all scores)
+#     └── score_explainer        → (pure LLM, plain-language output)
 
 {
     "llm_config": {
-        "model_name": "mistral/mistral-medium-latest"
-        "model_name": ${?AGENT_MODEL_NAME}
+        "class": "langchain_mistralai.ChatMistralAI"
+        "model_name": "mistral-medium-latest"
+        "mistral_api_key": ${?MISTRAL_API_KEY}
         "temperature": 0.2,
         "max_tokens": 2048
     },
@@ -31,7 +32,7 @@
         {
             "name": "credit_coordinator",
             "function": {
-                "description": "CreditBridge main coordinator. Receives applicant data and orchestrates 6 specialized scoring agents, then calls risk_synthesizer and score_explainer to produce a complete credit assessment report.",
+                "description": "CreditBridge main coordinator. Receives applicant data and orchestrates 7 specialized scoring agents, then calls risk_synthesizer and score_explainer to produce a complete credit assessment report.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -42,7 +43,7 @@
                         "consented_sources": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "List of data sources the applicant has consented to. Possible values: phone_bill, ecommerce, geolocation, merchant, cashflow"
+                            "description": "List of data sources the applicant has consented to. Possible values: phone_bill, bill_consistency, ecommerce, geolocation, merchant, cashflow, financial_commitment"
                         },
                         "questionnaire_answers": {
                             "type": "array",
@@ -53,26 +54,30 @@
                     "required": ["applicant_id", "consented_sources", "questionnaire_answers"]
                 }
             },
-            "instructions": "You are the CreditBridge Credit Coordinator. Your job is to orchestrate a complete credit assessment for an applicant.\n\nFollow this EXACT workflow:\n\n1. Call phone_bill_agent with {applicant_id} if 'phone_bill' is in consented_sources\n2. Call ecommerce_agent with {applicant_id} if 'ecommerce' is in consented_sources\n3. Call geolocation_agent with {applicant_id} if 'geolocation' is in consented_sources\n4. Call psychometric_agent with {questionnaire_answers} always (no data source needed)\n5. Call merchant_agent with {applicant_id} if 'merchant' is in consented_sources\n6. Call cashflow_agent with {applicant_id} if 'cashflow' is in consented_sources\n7. Collect ALL agent results (scores 0-100 and reasons)\n8. Call risk_synthesizer with all collected scores and which sources were consented\n9. Call score_explainer with the synthesizer result\n\nReturn a JSON object with ALL of this information:\n{\n  'applicant_id': str,\n  'agent_scores': {source: {score: int, reason: str}},\n  'final_score': int,\n  'risk_category': str,\n  'decision': str,\n  'loan_recommended': int,\n  'interest_rate': float,\n  'explanation': str,\n  'pipeline_complete': true\n}\n\nNever skip any consented agent. Always call all agents before synthesizing.",
+            "instructions": "You are the CreditBridge Credit Coordinator. Your job is to orchestrate a complete credit assessment for an applicant.\n\nFollow this EXACT workflow:\n\n1. Call bill_consistency_agent with {applicant_id} if 'bill_consistency' is in consented_sources (this replaces phone_bill — it scores all recurring bills: rent, electricity, school fees, EMIs, etc.)\n2. Call ecommerce_agent with {applicant_id} if 'ecommerce' is in consented_sources\n3. Call geolocation_agent with {applicant_id} if 'geolocation' is in consented_sources\n4. Call psychometric_agent with {questionnaire_answers} always (no data source needed)\n5. Call merchant_agent with {applicant_id} if 'merchant' is in consented_sources\n6. Call cashflow_agent with {applicant_id} if 'cashflow' is in consented_sources\n7. Call financial_commitment_agent with {applicant_id} if 'financial_commitment' is in consented_sources\n8. Collect ALL agent results (scores 0-100 and reasons)\n9. Call risk_synthesizer with all collected scores and which sources were consented\n10. Call score_explainer with the synthesizer result\n\nReturn a JSON object with ALL of this information:\n{\n  'applicant_id': str,\n  'agent_scores': {source: {score: int, reason: str}},\n  'final_score': int,\n  'risk_category': str,\n  'decision': str,\n  'loan_recommended': int,\n  'interest_rate': float,\n  'explanation': str,\n  'pipeline_complete': true\n}\n\nNever skip any consented agent. Always call all agents before synthesizing.",
             "tools": [
-                "phone_bill_agent",
+                "bill_consistency_agent",
                 "ecommerce_agent",
                 "geolocation_agent",
                 "psychometric_agent",
                 "merchant_agent",
                 "cashflow_agent",
+                "financial_commitment_agent",
                 "risk_synthesizer",
                 "score_explainer"
             ]
         },
 
         # ================================================================
-        # AGENT 2: PHONE BILL AGENT
+        # AGENT 2: BILL CONSISTENCY AGENT (replaces Phone Bill Agent)
+        # Scores ALL recurring bills — rent, electricity, school fees,
+        # EMIs, insurance, gas, water, municipal tax, phone.
+        # Reads real uploaded documents from MongoDB via BillConsistencyScoringTool.
         # ================================================================
         {
-            "name": "phone_bill_agent",
+            "name": "bill_consistency_agent",
             "function": {
-                "description": "Analyzes phone bill payment history and returns a creditworthiness score from 0 to 100 with explanation.",
+                "description": "Analyzes recurring bill payment history (rent, electricity, school fees, EMIs, and any other consistent financial obligation) uploaded by the applicant. Returns a creditworthiness score 0-100 with per-stream breakdown.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -81,8 +86,8 @@
                     "required": ["applicant_id"]
                 }
             },
-            "instructions": "You are the Phone Bill Scoring Agent for CreditBridge.\n\nCall PhoneBillScoringTool with the applicant_id to get payment history data.\n\nThen score the data from 0 to 100 using this logic:\n- Base score: (on_time_payments / months_of_history) * 100\n- Subtract 15 points per disconnection\n- Subtract 5 points per late payment beyond the first 2\n- Add 10 bonus points if months_of_history > 24 (long track record)\n- Clamp final score between 0 and 100\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence explaining the score\"}",
-            "tools": ["PhoneBillScoringTool"]
+            "instructions": "You are the Bill Consistency Scoring Agent for CreditBridge.\n\nCall BillConsistencyScoringTool with the applicant_id to get their uploaded bill data.\n\nThe tool returns:\n- streams: list of bill streams (one per bill_type+payee combo) with stream_score (0-100) and reason\n- final_bill_score: already computed weighted score (0-100) considering type weights, consistency, amount, verification\n- bills_uploaded: how many bill documents were processed\n\nYour job:\n1. Review the stream data and final_bill_score\n2. If streams exist, use the final_bill_score directly — the formula is already applied\n3. If no bills uploaded (status=synthetic_fallback), note this and use the fallback score\n4. Write a ONE clear sentence reason summarizing the strongest bill signal\n\nBill type weight reference (for your narration):\n- Rent (1.5x weight) > EMI (1.4x) > School Fees (1.3x) > Insurance (1.1x) > Electricity (1.0x) > Phone (0.7x)\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence about the bill consistency pattern\", \"streams\": [list from tool], \"bills_count\": int}",
+            "tools": ["BillConsistencyScoringTool"]
         },
 
         # ================================================================
@@ -171,7 +176,7 @@
         {
             "name": "cashflow_agent",
             "function": {
-                "description": "Analyzes bank account cashflow patterns to assess income stability and financial management.",
+                "description": "Analyzes the applicant's layered cashflow profile (digital Account Aggregator bank feeds, uploaded bank statements, and manual ledger sheets) and computes a trust-weighted cashflow score from 0 to 100.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -180,18 +185,37 @@
                     "required": ["applicant_id"]
                 }
             },
-            "instructions": "You are the Cashflow Agent for CreditBridge.\n\nCall CashflowScoringTool with the applicant_id.\n\nIf has_bank_account is false, return score 40 with reason 'No bank account — minimum baseline applied'.\n\nOtherwise score 0-100:\n- Has bank account: +20 base\n- Credit regularity is Regular: +30\n- Average monthly balance above Rs 10000: +20; above Rs 5000: +15; above Rs 1000: +8\n- Zero bounced transactions: +20; 1-2 bounced: +10\n- Saves regularly: +10; Occasional savings: +5\n- Clamp between 0 and 100\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence explaining the score\"}",
+            "instructions": "You are the Cashflow Scoring Agent for CreditBridge.\n\nCall CashflowScoringTool with the applicant_id.\n\nThe tool returns:\n- final_cashflow_score: trust-weighted score (0-100)\n- reason: summary of monthly credits, balances, and verification feeds\n- metrics: average_monthly_balance, monthly_credits, bounced_transactions_count\n- trust_matrix: percentage ratios for account_aggregator_pct, document_uploaded_pct, self_reported_pct\n\nYour job:\n1. Review the cashflow metrics and the trust_matrix percentages.\n2. Summarize how much of the cashflow is digitally verified (AA) vs. self-reported (uploads/ledgers).\n3. State the final_cashflow_score directly in your assessment.\n4. Highlight any transaction bounce warnings if present.\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence explaining the score and its verification mix\", \"metrics\": {dict from tool}, \"trust_matrix\": {dict from tool}}",
             "tools": ["CashflowScoringTool"]
         },
 
         # ================================================================
-        # AGENT 8: RISK SYNTHESIZER
-        # Combines all 6 agent scores into a final 300-850 credit score
+        # AGENT 8: FINANCIAL COMMITMENT AGENT (new)
+        # ================================================================
+        {
+            "name": "financial_commitment_agent",
+            "function": {
+                "description": "Analyzes long-term savings behaviors and financial commitments (insurance policies, SIP statements, recurring deposits, chit funds) uploaded by the applicant. Returns a savings commitment score 0-100.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
+                    },
+                    "required": ["applicant_id"]
+                }
+            },
+            "instructions": "You are the Financial Commitment Scoring Agent for CreditBridge.\n\nCall FinancialCommitmentScoringTool with the applicant_id to get their savings commitment data.\n\nThe tool returns:\n- score: consistency and diversity-based score (0-100)\n- reason: summary of policies, payments, and diversity of plans\n\nYour job:\n1. Review the commitment data and score.\n2. Write a ONE clear sentence reason summarizing the savings commitments.\n3. Return ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence about savings commitment behavior\"}",
+            "tools": ["FinancialCommitmentScoringTool"]
+        },
+
+        # ================================================================
+        # AGENT 9: RISK SYNTHESIZER
+        # Combines all 7 agent scores into a final 300-850 credit score
         # ================================================================
         {
             "name": "risk_synthesizer",
             "function": {
-                "description": "Combines all 6 agent sub-scores using configurable weights to produce a final 300-850 credit score with risk categorization and loan recommendation.",
+                "description": "Combines all 7 agent sub-scores using configurable weights to produce a final 300-850 credit score with risk categorization and loan recommendation.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -208,7 +232,7 @@
                     "required": ["agent_scores", "consented_sources"]
                 }
             },
-            "instructions": "You are the Risk Synthesizer for CreditBridge.\n\nYou receive scores from up to 6 agents. Apply these DEFAULT weights:\n- phone_bill: 25%\n- cashflow: 20%\n- psychometric: 20%\n- geolocation: 15%\n- ecommerce: 12%\n- merchant: 8%\n\nIMPORTANT: Only use weights for sources in consented_sources. Redistribute excluded weights proportionally to remaining sources so total always equals 100%.\n\nCalculation:\n1. Get active weights (only consented sources)\n2. Normalize so they sum to 1.0\n3. weighted_average = sum(score * normalized_weight for each)\n4. final_score = round(300 + (weighted_average / 100) * 550)\n5. Clamp to 300-850\n\nRisk categories:\n- 750-850: Low Risk — Pre-approved — up to Rs 5,00,000 at 10.5%\n- 650-749: Low-Medium Risk — Approved — up to Rs 3,00,000 at 12.0%\n- 550-649: Medium Risk — Conditional — up to Rs 1,00,000 at 15.0%\n- 450-549: Medium-High Risk — Careful Review — up to Rs 50,000 at 18.0%\n- 300-449: High Risk — Not Recommended — Rs 0\n\nReturn this JSON:\n{\n  \"final_score\": int,\n  \"risk_category\": str,\n  \"decision\": str,\n  \"loan_recommended\": int,\n  \"interest_rate\": float,\n  \"weighted_average\": float,\n  \"weights_applied\": {source: float},\n  \"score_breakdown\": {source: {score: int, weight_pct: float, contribution: float}}\n}",
+            "instructions": "You are the Risk Synthesizer for CreditBridge.\n\nYou receive scores from up to 7 agents. Apply these DEFAULT weights:\n- bill_consistency: 20%  (covers rent, EMIs, school fees, all recurring bills)\n- cashflow: 20%\n- financial_commitment: 18%\n- psychometric: 15%\n- geolocation: 12%\n- ecommerce: 10%\n- merchant: 5%\n\nIMPORTANT: Only use weights for sources in consented_sources. Redistribute excluded weights proportionally to remaining sources so total always equals 100%.\n\nCalculation:\n1. Get active weights (only consented sources)\n2. Normalize so they sum to 1.0\n3. weighted_average = sum(score * normalized_weight for each)\n4. final_score = round(300 + (weighted_average / 100) * 550)\n5. Clamp to 300-850\n\nRisk categories:\n- 750-850: Low Risk — Pre-approved — up to Rs 5,00,000 at 10.5%\n- 650-749: Low-Medium Risk — Approved — up to Rs 3,00,000 at 12.0%\n- 550-649: Medium Risk — Conditional — up to Rs 1,00,000 at 15.0%\n- 450-549: Medium-High Risk — Careful Review — up to Rs 50,000 at 18.0%\n- 300-449: High Risk — Not Recommended — Rs 0\n\nReturn this JSON:\n{\n  \"final_score\": int,\n  \"risk_category\": str,\n  \"decision\": str,\n  \"loan_recommended\": int,\n  \"interest_rate\": float,\n  \"weighted_average\": float,\n  \"weights_applied\": {source: float},\n  \"score_breakdown\": {source: {score: int, weight_pct: float, contribution: float}}\n}",
             "tools": []
         },
 
@@ -243,10 +267,10 @@
         # CODED TOOLS — Python classes that agents can call
         # ================================================================
         {
-            "name": "PhoneBillScoringTool",
-            "class": "coded_tools.creditbridge.phone_bill_tool.PhoneBillScoringTool",
+            "name": "BillConsistencyScoringTool",
+            "class": "coded_tools.creditbridge.bill_consistency_tool.BillConsistencyScoringTool",
             "function": {
-                "description": "Fetches phone bill payment history for an applicant from the synthetic data generator.",
+                "description": "Fetches uploaded bill data from MongoDB and computes bill consistency scores. Handles rent, electricity, school fees, EMIs, and any other recurring bill type. Falls back to synthetic data if no bills uploaded.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -256,6 +280,7 @@
                 }
             }
         },
+
 
         {
             "name": "EcommerceScoringTool",
@@ -307,6 +332,21 @@
             "class": "coded_tools.creditbridge.cashflow_tool.CashflowScoringTool",
             "function": {
                 "description": "Fetches bank cashflow pattern data for an applicant.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
+                    },
+                    "required": ["applicant_id"]
+                }
+            }
+        },
+
+        {
+            "name": "FinancialCommitmentScoringTool",
+            "class": "coded_tools.creditbridge.financial_commitment_tool.FinancialCommitmentScoringTool",
+            "function": {
+                "description": "Fetches savings commitment data (LIC premiums, SIP statements, recurring deposits, chit funds) from MongoDB and scores consistency and diversity. Falls back to synthetic data if no commitments uploaded.",
                 "parameters": {
                     "type": "object",
                     "properties": {

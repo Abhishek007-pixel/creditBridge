@@ -11,6 +11,7 @@
 | Session 1 | 2026-06-22, 11:00 AM – 1:00 PM | Full backend build, agent HOCON, coded tools, FastAPI routes, frontend scaffold |
 | Session 2 | 2026-06-22, 5:30 PM – 6:30 PM | Full Neuro SAN Studio setup, fixed all class paths, runner rewrite, test suite |
 | Session 3 | 2026-06-22, 6:45 PM – 7:00 PM | Fixed manifest mapping format to resolve "not found" issue in Neuro SAN Studio |
+| Session 4 | 2026-06-28, 10:45 AM – 11:15 AM | Revise frontend UI uploads & sims, MongoDB auth storage, and dynamic agent loader |
 
 
 ---
@@ -214,4 +215,51 @@ In Neuro SAN, the manifest files (`manifest.hocon`) are watched and parsed using
   }
   ```
 * **Result:** The system correctly opens and parses `creditbridge.hocon`, registering it under its core network identifier `creditbridge`. The graph is loaded cleanly by the agent runner and Neuro SAN Studio!
+
+
+---
+
+## 6. Session 4 — Frontend UI Revamp & MongoDB Integration (2026-06-28, ~10:45 AM IST)
+
+During this session, we completed the integration of `frontend2` with the Python FastAPI backend, migrated credentials and questionnaire responses storage to MongoDB Atlas, implemented dynamic upload views with indicators, and added a visual 9-agent Neuro SAN execution loader.
+
+### **What Was Changed & Why**
+
+#### **6.1 — MongoDB Atlas Indexing & CRUD Helpers**
+* **File:** [database_mongo.py](file:///d:/creditbridge/backend/database_mongo.py)
+* **Changes:** Added unique indexes for a new `users` collection and indexes for a `questionnaire_responses` collection. Implemented `get_user_from_mongo`, `create_user_in_mongo`, and `save_questionnaire_response_mongo`.
+* **Why:** Enables full account registration, login verification, and psychometric answers persistence in MongoDB Atlas as requested.
+
+#### **6.2 — Authentication & Scoring Route Refactoring**
+* **File:** [routes/applicant.py](file:///d:/creditbridge/backend/routes/applicant.py)
+* **Changes:**
+  * Modified `/auth/login` to inspect MongoDB Atlas first. If the user does not exist but is in `DEMO_USERS` (SQLite config), automatically seeds their hashed password and record into MongoDB.
+  * Modified `/auth/register` and `/register` to sync new accounts to MongoDB Atlas.
+  * Modified `/me` and `/applicants/{applicant_id}/score` to return rich score breakdowns, including the newly added `financial_commitment` agent score and corrected HOCON weights.
+  * Modified `/questionnaire` to save questionnaire responses directly in MongoDB Atlas `questionnaire_responses`.
+
+#### **6.3 — Missing API GET Endpoints Implemented**
+* **Files:** [routes/ecommerce.py](file:///d:/creditbridge/backend/routes/ecommerce.py), [routes/commitments.py](file:///d:/creditbridge/backend/routes/commitments.py), [routes/geolocation.py](file:///d:/creditbridge/backend/routes/geolocation.py), [routes/merchant.py](file:///d:/creditbridge/backend/routes/merchant.py)
+* **Changes:** Added `/api/ecommerce/{id}`, `/api/commitments/{id}`, `/api/geolocation/{id}`, and `/api/merchant/{id}` routes to query uploaded records from MongoDB Atlas.
+* **Why:** Allows the React client to retrieve and display previously uploaded files and simulator states on page refresh.
+
+#### **6.4 — Dynamic Document Upload & Simulators UI (Step 3)**
+* **File:** [ApplicantPortal.tsx](file:///d:/creditbridge/frontend2/src/components/ApplicantPortal.tsx)
+* **Changes:**
+  * Added **Step 3 (Document Uploads & Verification)** showing tabs dynamically filtered by the user's DPDP consents.
+  * Added clear upload indicators: **"Max size: 5MB | Formats: PDF, JPG, PNG, CSV, TXT | Limit: Up to 10 files"**.
+  * Implemented file upload handlers calling their respective `/upload` routes.
+  * Implemented simulators: **Account Aggregator (AA)** (checks balances), **HTML5 Geolocation (GPS)** (Reverse-geocodes live coordinates), **GSTN Link**, and **Trade References Form**.
+  * Aligned consents list to include `financial_commitment` (18% weight) and adjusted other channel weights to match the agent configurations.
+
+#### **6.5 — Visual 9-Agent Pipeline Loader (Step 5)**
+* **File:** [ApplicantPortal.tsx](file:///d:/creditbridge/frontend2/src/components/ApplicantPortal.tsx)
+* **Changes:**
+  * Added **Step 5 (AI Process)** which acts as an active visual representation of the Neuro SAN Agent pipeline execution.
+  * Displays a grid of the 9 agent nodes (from `credit_coordinator` to `score_explainer`) which pulse when active and light up in green upon success, synchronized with a live-scrolling terminal log container.
+
+#### **6.6 — Admin Panel Weights Keys Aligned**
+* **File:** [AdminPanel.tsx](file:///d:/creditbridge/frontend2/src/components/AdminPanel.tsx)
+* **Changes:** Realigned default weights keys to use `bill_consistency` and `financial_commitment` to match the backend agent models.
+
 

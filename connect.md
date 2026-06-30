@@ -460,9 +460,9 @@ routes/scoring.py
 ### backend/.env (already exists — check these values)
 
 ```env
-MISTRAL_API_KEY=61tSquPznFQnur5Sy1u0WdpsMtyPQZQ8   # already set
+MISTRAL_API_KEY=your_mistral_api_key_here   # set this in your actual .env file
 AGENT_MODEL_NAME=mistral/mistral-medium-latest
-SECRET_KEY=2d1f9530de7eb4c602058097bbde103b41d2f7823e2dc21cb641a9fbdfbe04b6
+SECRET_KEY=your_secret_key_here   # generate with: python -c "import secrets; print(secrets.token_hex(32))"
 DATABASE_URL=./creditbridge.db
 USE_AGENTS=true
 AGENT_MANIFEST_FILE=registries/manifest.hocon

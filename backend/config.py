@@ -43,18 +43,24 @@ AGENT_MANIFEST_FILE: str = os.getenv(
 AGENT_TOOL_PATH: str = os.getenv("AGENT_TOOL_PATH", ".")
 USE_AGENTS: bool     = os.getenv("USE_AGENTS", "true").lower() == "true"
 
+# ── MongoDB Atlas config ──────────────────────────────────────────────────
+# URI must be set in backend/.env — never hardcode credentials here
+MONGODB_URI: str     = os.getenv("MONGODB_URI", "")
+MONGODB_DB_NAME: str = os.getenv("MONGODB_DB_NAME", "creditbridge")
+
 # ── JWT config ───────────────────────────────────────────────────────────
 ACCESS_TOKEN_EXPIRE_HOURS: int = 24
 ALGORITHM: str = "HS256"
 
 # ── Default agent weights ────────────────────────────────────────────────
 DEFAULT_WEIGHTS: dict = {
-    "phone_bill":    0.25,
-    "cashflow":      0.20,
-    "psychometric":  0.20,
-    "geolocation":   0.15,
-    "ecommerce":     0.12,
-    "merchant":      0.08,
+    "bill_consistency":     0.20,
+    "cashflow":             0.20,
+    "financial_commitment": 0.18,
+    "psychometric":         0.15,
+    "geolocation":          0.12,
+    "ecommerce":            0.10,
+    "merchant":             0.05,
 }
 
 # ── Score bands ──────────────────────────────────────────────────────────

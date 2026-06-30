@@ -109,13 +109,52 @@ def generate_applicant_data(applicant_id: str) -> dict:
         "avg_monthly_debit":      round(avg_balance * rng.uniform(0.3, 0.9), 2),
     }
 
+    # Generate deterministic financial commitments
+    has_savings = rng.random() > 0.4
+    commitments_list = []
+    if has_savings:
+        commitments_list.append({
+            "provider": "LIC India",
+            "amount": round(rng.uniform(1000, 5000), 0),
+            "payment_date": f"2024-06-{rng.randint(1, 28):02d}",
+            "policy_type": "insurance",
+            "period": "Monthly",
+            "months_active": rng.randint(6, 24)
+        })
+        if rng.random() > 0.5:
+            commitments_list.append({
+                "provider": "HDFC Mutual Fund",
+                "amount": round(rng.uniform(500, 3000), 0),
+                "payment_date": f"2024-06-{rng.randint(1, 28):02d}",
+                "policy_type": "sip",
+                "period": "Monthly",
+                "months_active": rng.randint(4, 18)
+            })
+    else:
+        # Check if they have at least a recurring deposit (RD)
+        if rng.random() > 0.5:
+            commitments_list.append({
+                "provider": "SBI Recurring Deposit",
+                "amount": round(rng.uniform(1000, 4000), 0),
+                "payment_date": f"2024-06-{rng.randint(1, 28):02d}",
+                "policy_type": "deposit",
+                "period": "Monthly",
+                "months_active": rng.randint(3, 12)
+            })
+
+    commitments_data = {
+        "has_savings": len(commitments_list) > 0,
+        "commitments": commitments_list
+    }
+
     return {
-        "applicant_id":    applicant_id,
-        "phone_bill":      phone_bill_data,
-        "ecommerce":       ecommerce_data,
-        "geolocation":     geolocation_data,
-        "merchant":        merchant_data,
-        "cashflow":        cashflow_data,
+        "applicant_id":         applicant_id,
+        "phone_bill":           phone_bill_data,
+        "ecommerce":            ecommerce_data,
+        "geolocation":          geolocation_data,
+        "merchant":             merchant_data,
+        "cashflow":             cashflow_data,
+        "financial_commitment": commitments_data,
     }
 
 
@@ -179,6 +218,42 @@ def score_ecommerce(data: dict) -> tuple[int, str]:
     return score, reason
 
 
+def score_financial_commitment(data: dict) -> tuple[int, str]:
+    """Score financial commitment savings and insurance behavior 0-100."""
+    if not data or not data.get("has_savings") or not data.get("commitments"):
+        return 40, "No active long-term savings or insurance commitments detected — neutral baseline applied"
+
+    commitments = data["commitments"]
+    score = 40  # base score
+
+    # Plan diversity
+    types = set(c["policy_type"] for c in commitments)
+    if len(types) >= 2:
+        score += 25
+        div_desc = f"diversified across {', '.join(types)}"
+    else:
+        score += 10
+        div_desc = f"concentrated in {list(types)[0]}"
+
+    # Consistency/Months active
+    max_months = max(c.get("months_active", 0) for c in commitments)
+    if max_months >= 12:
+        score += 20
+    elif max_months >= 6:
+        score += 10
+
+    # Amount volume
+    total_amount = sum(c.get("amount", 0) for c in commitments)
+    if total_amount >= 5000:
+        score += 15
+    elif total_amount >= 2000:
+        score += 10
+
+    score = min(100, score)
+    reason = f"Active financial commitments totaling ₹{total_amount:,.0f}/mo, {div_desc} with up to {max_months} months history."
+    return score, reason
+
+
 def score_geolocation(data: dict) -> tuple[int, str]:
     """Score geolocation stability 0-100."""
     d = data
@@ -220,7 +295,7 @@ def score_merchant(data: dict) -> tuple[int, str]:
     """Score merchant ratings 0-100."""
     d = data
     if d["total_merchants_rated"] == 0:
-        return 50, "No merchant data available — using neutral score"
+        return -1, "No merchant data available — agent skipped"
 
     score = 0
     rating = d["average_rating"]

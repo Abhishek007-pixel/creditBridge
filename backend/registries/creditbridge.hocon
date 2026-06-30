@@ -1,334 +1,222 @@
-# =============================================================================
-# CreditBridge — Alternate Credit Scoring System
-# Neuro-SAN agent network definition
-# 9 LLM agents + 5 CodedTools (PhoneBill, Ecommerce, Geolocation, Merchant, Cashflow)
-# LLM: Mistral (LangChain ChatMistralAI; requires MISTRAL_API_KEY)
-# PSB Hackathon 2026 | UCO Bank × Department of Financial Services
-# =============================================================================
+# CreditBridge — 9-Agent Credit Scoring Network
+# Built on Neuro SAN (Cognizant AI Lab)
+# Reference: https://github.com/cognizant-ai-lab/neuro-san-studio
+#
+# Agent topology:
+#   credit_coordinator (frontman)
+#     ├── bill_consistency_agent → BillConsistencyScoringTool  (replaces phone_bill_agent)
+#     ├── ecommerce_agent        → EcommerceScoringTool
+#     ├── geolocation_agent      → GeolocationScoringTool
+#     ├── psychometric_agent     → (pure LLM, no tool)
+#     ├── merchant_agent         → MerchantScoringTool
+#     ├── cashflow_agent         → CashflowScoringTool
+#     ├── financial_commitment_agent → FinancialCommitmentScoringTool
+#     ├── risk_synthesizer       → (pure LLM, combines all scores)
+#     └── score_explainer        → (pure LLM, plain-language output)
 
 {
-    # =========================================================================
-    # METADATA
-    # =========================================================================
-    "metadata": {
-        "description": "CreditBridge AI Credit Coordinator — alternative credit scoring for underbanked Indians with no formal credit history. Uses 6 data signals: phone bill payments, e-commerce behavior, geolocation stability, psychometric profile, merchant ratings, and bank cashflow to produce a 300-850 credit score."
-        "tags": ["credit-scoring", "fintech", "india", "psb-hackathon", "underbanked", "alternative-data", "multi-agent"]
-        "sample_queries": [
-            "{\"applicant_id\": \"demo-priya-002\", \"consented_sources\": [\"phone_bill\", \"ecommerce\", \"geolocation\", \"merchant\", \"cashflow\"], \"questionnaire_answers\": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}",
-            "{\"applicant_id\": \"demo-ravi-001\", \"consented_sources\": [\"phone_bill\", \"geolocation\", \"merchant\"], \"questionnaire_answers\": [0, 1, 0, 2, 0, 0, 1, 0, 0, 0]}",
-            "{\"applicant_id\": \"demo-ishaq-003\", \"consented_sources\": [\"phone_bill\", \"geolocation\"], \"questionnaire_answers\": [2, 2, 1, 3, 1, 2, 3, 1, 2, 2]}",
-        ]
-    },
-
-    # Global LLM config — Mistral via LangChain (same as DARC pattern)
     "llm_config": {
-        "fallbacks": [
-            {
-                "class": "langchain_mistralai.chat_models.ChatMistralAI",
-                "model": "mistral-medium-latest",
-                "temperature": 0.2
-            },
-            {
-                "class": "openai",
-                "model": "gpt-4o-mini",
-            }
-        ]
+        "class": "langchain_mistralai.ChatMistralAI"
+        "model_name": "mistral-medium-latest"
+        "mistral_api_key": ${?MISTRAL_API_KEY}
+        "temperature": 0.2,
+        "max_tokens": 2048
     },
 
-    # =========================================================================
-    # TOOLS ARRAY — Order matters: first entry is the "Front Man" (entry point)
-    # =========================================================================
     "tools": [
 
-        # =====================================================================
-        # AGENT 1: CREDIT COORDINATOR (Front Man — entry point)
-        # =====================================================================
+        # ================================================================
+        # AGENT 1: CREDIT COORDINATOR — Frontman/Orchestrator
+        # The user-facing agent. Receives applicant_id + consents +
+        # questionnaire answers and orchestrates the full pipeline.
+        # ================================================================
         {
             "name": "credit_coordinator",
             "function": {
-                "description": "CreditBridge AI Credit Coordinator — assesses creditworthiness for underbanked Indians using 6 alternative data signals. Provide applicant_id, consented data sources, and psychometric questionnaire answers.",
+                "description": "CreditBridge main coordinator. Receives applicant data and orchestrates 7 specialized scoring agents, then calls risk_synthesizer and score_explainer to produce a complete credit assessment report.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "applicant_id": {
                             "type": "string",
-                            "description": "Unique applicant ID, e.g. demo-priya-002"
+                            "description": "Unique applicant UUID from the database"
                         },
                         "consented_sources": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Data sources the applicant consented to share. Options: phone_bill, ecommerce, geolocation, merchant, cashflow"
+                            "description": "List of data sources the applicant has consented to. Possible values: phone_bill, bill_consistency, ecommerce, geolocation, merchant, cashflow, financial_commitment"
                         },
                         "questionnaire_answers": {
                             "type": "array",
                             "items": {"type": "int"},
-                            "description": "Psychometric answer indices (0=most responsible, 3=least) for 10 questions"
+                            "description": "List of answer indices (0-3) for each psychometric question"
                         }
                     },
                     "required": ["applicant_id", "consented_sources", "questionnaire_answers"]
                 }
             },
-            "instructions": """You are the CreditBridge Credit Coordinator — an AI credit scoring system for underbanked Indians with no formal credit history.
-
-When you receive a request, call these agents IN ORDER:
-
-1. If 'phone_bill' is in consented_sources: call phone_bill_agent with applicant_id
-2. If 'ecommerce' is in consented_sources: call ecommerce_agent with applicant_id
-3. If 'geolocation' is in consented_sources: call geolocation_agent with applicant_id
-4. ALWAYS call psychometric_agent with questionnaire_answers (no consent needed)
-5. If 'merchant' is in consented_sources: call merchant_agent with applicant_id
-6. If 'cashflow' is in consented_sources: call cashflow_agent with applicant_id
-7. Collect ALL results — each agent returns {"score": int, "reason": str}
-8. Call risk_synthesizer with all collected scores and consented_sources
-9. Call score_explainer with the synthesizer result and agent_scores
-
-After all agents complete, return this final JSON:
-{
-  "applicant_id": str,
-  "agents_run": [list of agent names called],
-  "agent_scores": {source: {"score": int, "reason": str}},
-  "final_score": int,
-  "risk_category": str,
-  "decision": str,
-  "loan_recommended": int,
-  "interest_rate": float,
-  "explanation": str,
-  "top_strengths": [list],
-  "improvement_tips": [list],
-  "pipeline_complete": true
-}
-
-Never skip a consented agent. Always run psychometric regardless of consent.""",
+            "instructions": "You are the CreditBridge Credit Coordinator. Your job is to orchestrate a complete credit assessment for an applicant.\n\nFollow this EXACT workflow:\n\n1. Call bill_consistency_agent with {applicant_id} if 'bill_consistency' is in consented_sources (this replaces phone_bill — it scores all recurring bills: rent, electricity, school fees, EMIs, etc.)\n2. Call ecommerce_agent with {applicant_id} if 'ecommerce' is in consented_sources\n3. Call geolocation_agent with {applicant_id} if 'geolocation' is in consented_sources\n4. Call psychometric_agent with {questionnaire_answers} always (no data source needed)\n5. Call merchant_agent with {applicant_id} if 'merchant' is in consented_sources\n6. Call cashflow_agent with {applicant_id} if 'cashflow' is in consented_sources\n7. Call financial_commitment_agent with {applicant_id} if 'financial_commitment' is in consented_sources\n8. Collect ALL agent results (scores 0-100 and reasons)\n9. Call risk_synthesizer with all collected scores and which sources were consented\n10. Call score_explainer with the synthesizer result\n\nReturn a JSON object with ALL of this information:\n{\n  'applicant_id': str,\n  'agent_scores': {source: {score: int, reason: str}},\n  'final_score': int,\n  'risk_category': str,\n  'decision': str,\n  'loan_recommended': int,\n  'interest_rate': float,\n  'explanation': str,\n  'pipeline_complete': true\n}\n\nNever skip any consented agent. Always call all agents before synthesizing.",
             "tools": [
-                "phone_bill_agent",
+                "bill_consistency_agent",
                 "ecommerce_agent",
                 "geolocation_agent",
                 "psychometric_agent",
                 "merchant_agent",
                 "cashflow_agent",
+                "financial_commitment_agent",
                 "risk_synthesizer",
                 "score_explainer"
             ]
         },
 
-        # =====================================================================
-        # AGENT 2: PHONE BILL AGENT
-        # =====================================================================
+        # ================================================================
+        # AGENT 2: BILL CONSISTENCY AGENT (replaces Phone Bill Agent)
+        # Scores ALL recurring bills — rent, electricity, school fees,
+        # EMIs, insurance, gas, water, municipal tax, phone.
+        # Reads real uploaded documents from MongoDB via BillConsistencyScoringTool.
+        # ================================================================
         {
-            "name": "phone_bill_agent",
+            "name": "bill_consistency_agent",
             "function": {
-                "description": "Analyzes phone bill payment history to score creditworthiness 0-100.",
+                "description": "Analyzes recurring bill payment history (rent, electricity, school fees, EMIs, and any other consistent financial obligation) uploaded by the applicant. Returns a creditworthiness score 0-100 with per-stream breakdown.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "applicant_id": {
-                            "type": "string",
-                            "description": "Applicant UUID"
-                        }
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
                     },
                     "required": ["applicant_id"]
                 }
             },
-            "instructions": """You are the Phone Bill Agent for CreditBridge.
-
-Call PhoneBillScoringTool with the applicant_id. It returns phone payment history data.
-
-Score 0-100:
-- Base: (on_time_payments / months_of_history) * 100
-- Subtract 15 per disconnection
-- Subtract 5 per late payment beyond the first 2
-- Add 10 bonus if months_of_history > 24
-- Clamp to [0, 100]
-
-Return ONLY valid JSON:
-{"score": <integer>, "reason": "<one sentence>"}""",
-            "tools": ["PhoneBillScoringTool"]
+            "instructions": "You are the Bill Consistency Scoring Agent for CreditBridge.\n\nCall BillConsistencyScoringTool with the applicant_id to get their uploaded bill data.\n\nThe tool returns:\n- streams: list of bill streams (one per bill_type+payee combo) with stream_score (0-100) and reason\n- final_bill_score: already computed weighted score (0-100) considering type weights, consistency, amount, verification\n- bills_uploaded: how many bill documents were processed\n\nYour job:\n1. Review the stream data and final_bill_score\n2. If streams exist, use the final_bill_score directly — the formula is already applied\n3. If no bills uploaded (status=synthetic_fallback), note this and use the fallback score\n4. Write a ONE clear sentence reason summarizing the strongest bill signal\n\nBill type weight reference (for your narration):\n- Rent (1.5x weight) > EMI (1.4x) > School Fees (1.3x) > Insurance (1.1x) > Electricity (1.0x) > Phone (0.7x)\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence about the bill consistency pattern\", \"streams\": [list from tool], \"bills_count\": int}",
+            "tools": ["BillConsistencyScoringTool"]
         },
 
-        # =====================================================================
+        # ================================================================
         # AGENT 3: ECOMMERCE AGENT
-        # =====================================================================
+        # ================================================================
         {
             "name": "ecommerce_agent",
             "function": {
-                "description": "Analyzes e-commerce purchase behavior to score financial discipline 0-100.",
+                "description": "Analyzes e-commerce purchase behavior to score financial discipline from 0 to 100.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "applicant_id": {
-                            "type": "string",
-                            "description": "Applicant UUID"
-                        }
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
                     },
                     "required": ["applicant_id"]
                 }
             },
-            "instructions": """You are the E-commerce Agent for CreditBridge.
-
-Call EcommerceScoringTool with the applicant_id.
-
-Score 0-100 starting at 40:
-- Prepaid payment method: +20; Mixed: +10
-- Return rate below 10%: +15; below 20%: +5
-- Account age over 12 months: +10
-- Average order value Rs 500-2000: +10
-- Orders per month above 3: +10; above 1.5: +5
-- Clamp to [0, 100]
-
-Return ONLY valid JSON:
-{"score": <integer>, "reason": "<one sentence>"}""",
+            "instructions": "You are the E-commerce Scoring Agent for CreditBridge.\n\nCall EcommerceScoringTool with the applicant_id to get purchase behavior data.\n\nScore from 0 to 100:\n- Start at 40 base points\n- Payment method is Prepaid: +20 points; Mixed: +10 points\n- Return rate below 10%: +15 points; below 20%: +5 points\n- Account age over 12 months: +10 points\n- Average order value Rs 500-2000 (ideal range): +10 points\n- Orders per month above 3: +10 points; above 1.5: +5 points\n- Clamp between 0 and 100\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence explaining the score\"}",
             "tools": ["EcommerceScoringTool"]
         },
 
-        # =====================================================================
+        # ================================================================
         # AGENT 4: GEOLOCATION AGENT
-        # =====================================================================
+        # ================================================================
         {
             "name": "geolocation_agent",
             "function": {
-                "description": "Analyzes location stability as a proxy for social rootedness and lower flight risk.",
+                "description": "Analyzes location stability as a proxy for social rootedness and repayment reliability.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "applicant_id": {
-                            "type": "string",
-                            "description": "Applicant UUID"
-                        }
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
                     },
                     "required": ["applicant_id"]
                 }
             },
-            "instructions": """You are the Geolocation Agent for CreditBridge.
-
-Call GeolocationScoringTool with the applicant_id.
-
-Score 0-100:
-- Home stability >= 24 months: +40; >= 12: +30; >= 6: +15
-- Work stability >= 12 months: +30; >= 6: +20; else: +10
-- Commute distance < 10km: +10
-- Urban area: +10; Semi-urban: +5
-- No frequent long travel: +10
-- Clamp to [0, 100]
-
-Return ONLY valid JSON:
-{"score": <integer>, "reason": "<one sentence>"}""",
+            "instructions": "You are the Geolocation Stability Agent for CreditBridge.\n\nCall GeolocationScoringTool with the applicant_id to get location data.\n\nScore from 0 to 100:\n- Home stability above 24 months: +40; above 12: +30; above 6: +15\n- Work stability above 12 months: +30; above 6: +20; else: +10\n- Commute distance below 10km: +10 points\n- Urban area: +10 points; Semi-urban: +5 points\n- No frequent long travel: +10 points\n- Clamp between 0 and 100\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence explaining the score\"}",
             "tools": ["GeolocationScoringTool"]
         },
 
-        # =====================================================================
-        # AGENT 5: PSYCHOMETRIC AGENT (pure LLM — no coded tool)
-        # =====================================================================
+        # ================================================================
+        # AGENT 5: PSYCHOMETRIC AGENT (pure LLM — no external tool)
+        # ================================================================
         {
             "name": "psychometric_agent",
             "function": {
-                "description": "Analyzes psychometric questionnaire responses to assess financial risk attitude and behavioral integrity. Returns score 0-100.",
+                "description": "Analyzes psychometric questionnaire responses to assess financial risk attitude and behavioral integrity.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "questionnaire_answers": {
                             "type": "array",
                             "items": {"type": "int"},
-                            "description": "Answer indices (0=most responsible, 3=least) for 10 financial behavior questions"
+                            "description": "List of answer indices (0=best, 3=worst) for each question"
                         }
                     },
                     "required": ["questionnaire_answers"]
                 }
             },
-            "instructions": """You are the Psychometric Agent for CreditBridge.
-
-You receive questionnaire_answers — integers (0-3) for 10 questions about financial behavior.
-0 = most financially responsible. 3 = least responsible.
-
-Score the PATTERN of answers 0-100:
-- Financial planning mindset (Q1, Q2, Q4, Q6): up to 35 points
-- Integrity signals (Q5, Q7, Q8): up to 30 points
-- Debt attitude and literacy (Q3, Q9, Q10): up to 35 points
-
-Look for consistency — responsible answers across all dimensions scores highest.
-
-Return ONLY valid JSON:
-{"score": <integer>, "reason": "<one sentence about overall financial mindset>"}"""
+            "instructions": "You are the Psychometric Scoring Agent for CreditBridge.\n\nYou receive a list of answer indices (0-3) for psychometric questions about financial behavior.\n\nAnswer 0 means the most financially responsible choice.\nAnswer 3 means the least financially responsible choice.\n\nScore the pattern of answers from 0 to 100:\n- Financial planning mindset (Q1, Q4, Q7): up to 30 points total\n- Debt attitude and responsibility (Q2, Q5, Q6): up to 25 points\n- Integrity signals (Q3, Q8): up to 25 points\n- Financial literacy and purpose (Q9, Q10): up to 20 points\n\nLook for PATTERNS — consistency across answers matters as much as individual answers.\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence about the financial mindset pattern observed\"}",
+            "tools": []
         },
 
-        # =====================================================================
+        # ================================================================
         # AGENT 6: MERCHANT AGENT
-        # =====================================================================
+        # ================================================================
         {
             "name": "merchant_agent",
             "function": {
-                "description": "Analyzes merchant ratings and business relationships to score commercial trustworthiness 0-100.",
+                "description": "Analyzes merchant ratings and business relationships to score commercial trustworthiness.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "applicant_id": {
-                            "type": "string",
-                            "description": "Applicant UUID"
-                        }
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
                     },
                     "required": ["applicant_id"]
                 }
             },
-            "instructions": """You are the Merchant Agent for CreditBridge.
-
-Call MerchantScoringTool with the applicant_id.
-
-If total_merchants_rated is 0: return {"score": 50, "reason": "No merchant data — neutral baseline applied"}
-
-Otherwise score 0-100:
-- Average rating 4.5-5.0: 50 base; 3.5-4.5: 35; 2.5-3.5: 20; below 2.5: 5
-- 10+ merchant relationships: +20; 5+: +15; 2+: +10
-- Relationship years 3+: +20; 1+: +10
-- Payment consistency Excellent: +10; Good: +5
-- Clamp to [0, 100]
-
-Return ONLY valid JSON:
-{"score": <integer>, "reason": "<one sentence>"}""",
+            "instructions": "You are the Merchant Rating Agent for CreditBridge.\n\nCall MerchantScoringTool with the applicant_id.\n\nIf total_merchants_rated is 0, return score 50 with reason 'No merchant data — neutral score applied'.\n\nOtherwise score 0-100:\n- Average rating 4.5-5.0: 50 base points; 3.5-4.5: 35; 2.5-3.5: 20; below 2.5: 5\n- 10+ merchant relationships: +20; 5+: +15; 2+: +10\n- Relationship years 3+: +20; 1+: +10\n- Payment consistency Excellent: +10; Good: +5\n- Clamp between 0 and 100\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence explaining the score\"}",
             "tools": ["MerchantScoringTool"]
         },
 
-        # =====================================================================
+        # ================================================================
         # AGENT 7: CASHFLOW AGENT
-        # =====================================================================
+        # ================================================================
         {
             "name": "cashflow_agent",
             "function": {
-                "description": "Analyzes bank account cashflow patterns to score income stability and financial discipline 0-100.",
+                "description": "Analyzes the applicant's layered cashflow profile (digital Account Aggregator bank feeds, uploaded bank statements, and manual ledger sheets) and computes a trust-weighted cashflow score from 0 to 100.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "applicant_id": {
-                            "type": "string",
-                            "description": "Applicant UUID"
-                        }
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
                     },
                     "required": ["applicant_id"]
                 }
             },
-            "instructions": """You are the Cashflow Agent for CreditBridge.
-
-Call CashflowScoringTool with the applicant_id.
-
-If has_bank_account is false: return {"score": 40, "reason": "No bank account — minimum baseline applied"}
-
-Otherwise score 0-100 starting at 20:
-- Regular monthly credits: +30
-- Average monthly balance >= Rs 10000: +20; >= Rs 5000: +15; >= Rs 1000: +8
-- Zero bounced transactions: +20; 1-2 bounced: +10
-- Saves regularly: +10; Occasional savings: +5
-- Clamp to [0, 100]
-
-Return ONLY valid JSON:
-{"score": <integer>, "reason": "<one sentence>"}""",
+            "instructions": "You are the Cashflow Scoring Agent for CreditBridge.\n\nCall CashflowScoringTool with the applicant_id.\n\nThe tool returns:\n- final_cashflow_score: trust-weighted score (0-100)\n- reason: summary of monthly credits, balances, and verification feeds\n- metrics: average_monthly_balance, monthly_credits, bounced_transactions_count\n- trust_matrix: percentage ratios for account_aggregator_pct, document_uploaded_pct, self_reported_pct\n\nYour job:\n1. Review the cashflow metrics and the trust_matrix percentages.\n2. Summarize how much of the cashflow is digitally verified (AA) vs. self-reported (uploads/ledgers).\n3. State the final_cashflow_score directly in your assessment.\n4. Highlight any transaction bounce warnings if present.\n\nReturn ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence explaining the score and its verification mix\", \"metrics\": {dict from tool}, \"trust_matrix\": {dict from tool}}",
             "tools": ["CashflowScoringTool"]
         },
 
-        # =====================================================================
-        # AGENT 8: RISK SYNTHESIZER
-        # =====================================================================
+        # ================================================================
+        # AGENT 8: FINANCIAL COMMITMENT AGENT (new)
+        # ================================================================
+        {
+            "name": "financial_commitment_agent",
+            "function": {
+                "description": "Analyzes long-term savings behaviors and financial commitments (insurance policies, SIP statements, recurring deposits, chit funds) uploaded by the applicant. Returns a savings commitment score 0-100.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
+                    },
+                    "required": ["applicant_id"]
+                }
+            },
+            "instructions": "You are the Financial Commitment Scoring Agent for CreditBridge.\n\nCall FinancialCommitmentScoringTool with the applicant_id to get their savings commitment data.\n\nThe tool returns:\n- score: consistency and diversity-based score (0-100)\n- reason: summary of policies, payments, and diversity of plans\n\nYour job:\n1. Review the commitment data and score.\n2. Write a ONE clear sentence reason summarizing the savings commitments.\n3. Return ONLY this JSON:\n{\"score\": int, \"reason\": \"one clear sentence about savings commitment behavior\"}",
+            "tools": ["FinancialCommitmentScoringTool"]
+        },
+
+        # ================================================================
+        # AGENT 9: RISK SYNTHESIZER
+        # Combines all 7 agent scores into a final 300-850 credit score
+        # ================================================================
         {
             "name": "risk_synthesizer",
             "function": {
-                "description": "Combines all agent sub-scores using weighted averaging to produce a final 300-850 credit score with risk category and loan recommendation.",
+                "description": "Combines all 7 agent sub-scores using configurable weights to produce a final 300-850 credit score with risk categorization and loan recommendation.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -339,53 +227,30 @@ Return ONLY valid JSON:
                         "consented_sources": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "List of consented source names. Weights redistribute for missing sources."
+                            "description": "List of data sources applicant consented to"
                         }
                     },
                     "required": ["agent_scores", "consented_sources"]
                 }
             },
-            "instructions": """You are the Risk Synthesizer for CreditBridge.
-
-DEFAULT WEIGHTS:
-- phone_bill: 0.25
-- cashflow: 0.20
-- psychometric: 0.20
-- geolocation: 0.15
-- ecommerce: 0.12
-- merchant: 0.08
-
-STEPS:
-1. Only use weights for sources present in agent_scores
-2. Normalize active weights so they sum to 1.0
-3. weighted_average = sum(score * normalized_weight) for each active source
-4. final_score = round(300 + (weighted_average / 100) * 550)
-5. Clamp final_score to [300, 850]
-
-RISK BANDS:
-- 750-850: Low Risk — Pre-approved — max loan Rs 5,00,000 at 10.5%
-- 650-749: Low-Medium Risk — Approved — max loan Rs 3,00,000 at 12.0%
-- 550-649: Medium Risk — Conditional — max loan Rs 1,00,000 at 15.0%
-- 450-549: Medium-High Risk — Careful Review — max loan Rs 50,000 at 18.0%
-- 300-449: High Risk — Not Recommended — loan Rs 0
-
-Return ONLY valid JSON:
-{"final_score": <int>, "risk_category": "<str>", "decision": "<str>", "loan_recommended": <int>, "interest_rate": <float>, "weighted_average": <float>, "weights_applied": {"<source>": <float>}, "score_breakdown": {"<source>": {"score": <int>, "weight_pct": <float>}}}"""
+            "instructions": "You are the Risk Synthesizer for CreditBridge.\n\nYou receive scores from up to 7 agents. Apply these DEFAULT weights:\n- bill_consistency: 20%  (covers rent, EMIs, school fees, all recurring bills)\n- cashflow: 20%\n- financial_commitment: 18%\n- psychometric: 15%\n- geolocation: 12%\n- ecommerce: 10%\n- merchant: 5%\n\nIMPORTANT: Only use weights for sources in consented_sources. Redistribute excluded weights proportionally to remaining sources so total always equals 100%.\n\nCalculation:\n1. Get active weights (only consented sources)\n2. Normalize so they sum to 1.0\n3. weighted_average = sum(score * normalized_weight for each)\n4. final_score = round(300 + (weighted_average / 100) * 550)\n5. Clamp to 300-850\n\nRisk categories:\n- 750-850: Low Risk — Pre-approved — up to Rs 5,00,000 at 10.5%\n- 650-749: Low-Medium Risk — Approved — up to Rs 3,00,000 at 12.0%\n- 550-649: Medium Risk — Conditional — up to Rs 1,00,000 at 15.0%\n- 450-549: Medium-High Risk — Careful Review — up to Rs 50,000 at 18.0%\n- 300-449: High Risk — Not Recommended — Rs 0\n\nReturn this JSON:\n{\n  \"final_score\": int,\n  \"risk_category\": str,\n  \"decision\": str,\n  \"loan_recommended\": int,\n  \"interest_rate\": float,\n  \"weighted_average\": float,\n  \"weights_applied\": {source: float},\n  \"score_breakdown\": {source: {score: int, weight_pct: float, contribution: float}}\n}",
+            "tools": []
         },
 
-        # =====================================================================
+        # ================================================================
         # AGENT 9: SCORE EXPLAINER
-        # =====================================================================
+        # Generates a plain-language explanation for the applicant
+        # ================================================================
         {
             "name": "score_explainer",
             "function": {
-                "description": "Writes a plain-language explanation of the credit score. Three paragraphs, no jargon, with improvement tips.",
+                "description": "Generates a plain-language explanation of the credit score that any applicant can understand. Written respectfully with improvement suggestions.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "synthesis_result": {
                             "type": "object",
-                            "description": "Complete output from risk_synthesizer"
+                            "description": "Complete output from risk_synthesizer including score, category, breakdown"
                         },
                         "agent_scores": {
                             "type": "object",
@@ -395,51 +260,38 @@ Return ONLY valid JSON:
                     "required": ["synthesis_result", "agent_scores"]
                 }
             },
-            "instructions": """You are the Score Explainer for CreditBridge. You write clear, respectful credit score explanations.
-
-Write 3 short paragraphs:
-
-Paragraph 1 — The result: State the score (X out of 850), risk band, and loan eligibility in plain words.
-
-Paragraph 2 — Strengths: Find the 2 highest-scoring signals. Explain in everyday language why each is a positive sign.
-
-Paragraph 3 — Improvement: Find 1-2 lower-scoring signals. Give one specific, actionable tip for each. Be encouraging.
-
-End with always: 'This score was generated by an AI system. A human bank officer will make the final loan decision.'
-
-Simple English, Class 10 level. No jargon.
-
-Return ONLY valid JSON:
-{"explanation": "<three paragraph explanation>", "summary_line": "<one sentence summary>", "top_strengths": ["<strength 1>", "<strength 2>"], "improvement_tips": ["<tip 1>", "<tip 2>"]}"""
+            "instructions": "You are the Score Explainer for CreditBridge. Your job is to write a clear, respectful explanation of the credit assessment.\n\nWrite 3 paragraphs:\n\nParagraph 1 — The result: State the score (X out of 850), the risk category, and whether a loan is recommended. Use simple language. If approved, state the loan amount and rate.\n\nParagraph 2 — What helped: Identify the top 2 highest-scoring signals and explain IN PLAIN WORDS why they are good signs. Example: 'Your phone bills show you pay on time consistently — this is a strong sign of financial reliability.'\n\nParagraph 3 — How to improve: Identify 1-2 weak signals and give one concrete, actionable tip for each. Be encouraging. Never say the person is a bad risk — say 'strengthening X will help your score.'\n\nFinal line (always include): 'This score was generated by an AI system. A human bank officer will make the final loan decision.'\n\nWrite in clear English understandable by someone with Class 10 education. No jargon.\n\nReturn this JSON:\n{\n  \"explanation\": \"full 3-paragraph explanation\",\n  \"summary_line\": \"one sentence summary of the result\",\n  \"top_strengths\": [\"strength 1\", \"strength 2\"],\n  \"improvement_tips\": [\"tip 1\", \"tip 2\"]\n}",
+            "tools": []
         },
 
-        # =====================================================================
-        # CODED TOOLS — Python classes, loaded from backend/coded_tools/
-        # =====================================================================
+        # ================================================================
+        # CODED TOOLS — Python classes that agents can call
+        # ================================================================
         {
-            "name": "PhoneBillScoringTool",
-            "class": "coded_tools.creditbridge.phone_bill_tool.PhoneBillScoringTool",
+            "name": "BillConsistencyScoringTool",
+            "class": "coded_tools.creditbridge.bill_consistency_tool.BillConsistencyScoringTool",
             "function": {
-                "description": "Fetches phone bill payment history for an applicant from the synthetic data generator.",
+                "description": "Fetches uploaded bill data from MongoDB and computes bill consistency scores. Handles rent, electricity, school fees, EMIs, and any other recurring bill type. Falls back to synthetic data if no bills uploaded.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "applicant_id": {"type": "string"}
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
                     },
                     "required": ["applicant_id"]
                 }
             }
         },
 
+
         {
             "name": "EcommerceScoringTool",
             "class": "coded_tools.creditbridge.ecommerce_tool.EcommerceScoringTool",
             "function": {
-                "description": "Fetches e-commerce behavior data for an applicant.",
+                "description": "Fetches e-commerce purchase behavior data for an applicant.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "applicant_id": {"type": "string"}
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
                     },
                     "required": ["applicant_id"]
                 }
@@ -454,7 +306,7 @@ Return ONLY valid JSON:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "applicant_id": {"type": "string"}
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
                     },
                     "required": ["applicant_id"]
                 }
@@ -469,7 +321,7 @@ Return ONLY valid JSON:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "applicant_id": {"type": "string"}
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
                     },
                     "required": ["applicant_id"]
                 }
@@ -484,12 +336,26 @@ Return ONLY valid JSON:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "applicant_id": {"type": "string"}
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
+                    },
+                    "required": ["applicant_id"]
+                }
+            }
+        },
+
+        {
+            "name": "FinancialCommitmentScoringTool",
+            "class": "coded_tools.creditbridge.financial_commitment_tool.FinancialCommitmentScoringTool",
+            "function": {
+                "description": "Fetches savings commitment data (LIC premiums, SIP statements, recurring deposits, chit funds) from MongoDB and scores consistency and diversity. Falls back to synthetic data if no commitments uploaded.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "applicant_id": {"type": "string", "description": "Applicant UUID"}
                     },
                     "required": ["applicant_id"]
                 }
             }
         }
-
-    ]   # end tools array
+    ]
 }

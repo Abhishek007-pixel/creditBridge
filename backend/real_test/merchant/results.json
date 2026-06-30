@@ -1,0 +1,86 @@
+{
+  "gstn_link_test": {
+    "source": "merchant",
+    "applicant_id": "test_merchant_gstn",
+    "score": 73.33333333333334,
+    "preliminary_score": 73.33333333333334,
+    "reason": "GSTN verified (Commercial Trader & Retailers Ltd / 27MSMEB1234M1Z5): filed 10/12 returns on time. Active with 5 buyer(s). Total verified turnover \u20b9155,000.",
+    "preliminary_reason": "GSTN verified (Commercial Trader & Retailers Ltd / 27MSMEB1234M1Z5): filed 10/12 returns on time. Active with 5 buyer(s). Total verified turnover \u20b9155,000.",
+    "metrics": {
+      "track": "gstn",
+      "gstin": "27MSMEB1234M1Z5",
+      "business_name": "Commercial Trader & Retailers Ltd",
+      "filing_compliance_pct": 83,
+      "unique_buyers_count": 5,
+      "total_turnover": 155000.0
+    },
+    "data_source": "mongodb",
+    "status": "success"
+  },
+  "gstn_upload_test": {
+    "source": "merchant",
+    "applicant_id": "test_merchant_gstn",
+    "score": 66.0,
+    "preliminary_score": 66.0,
+    "reason": "GSTN verified (MSME Trader Retailers / 27MSMEB1234M1Z5): filed 2/2 returns on time. Active with 1 buyer(s). Total verified turnover \u20b9125,000.",
+    "preliminary_reason": "GSTN verified (MSME Trader Retailers / 27MSMEB1234M1Z5): filed 2/2 returns on time. Active with 1 buyer(s). Total verified turnover \u20b9125,000.",
+    "metrics": {
+      "track": "gstn",
+      "gstin": "27MSMEB1234M1Z5",
+      "business_name": "MSME Trader Retailers",
+      "filing_compliance_pct": 100,
+      "unique_buyers_count": 1,
+      "total_turnover": 125000.0
+    },
+    "data_source": "mongodb",
+    "status": "success"
+  },
+  "references_test": {
+    "source": "merchant",
+    "applicant_id": "test_merchant_gstn",
+    "score": 82.0,
+    "preliminary_score": 82.0,
+    "reason": "Trade references: 1/2 verified. Avg relationship longevity: 36.0 months. Avg trade rating: 4.5/5.0.",
+    "preliminary_reason": "Trade references: 1/2 verified. Avg relationship longevity: 36.0 months. Avg trade rating: 4.5/5.0.",
+    "metrics": {
+      "track": "references",
+      "references_total": 2,
+      "references_verified": 1,
+      "average_relationship_months": 36.0,
+      "average_rating": 4.5
+    },
+    "data_source": "mongodb",
+    "status": "success"
+  },
+  "opt_out_test": {
+    "coded_tool": {
+      "source": "merchant",
+      "applicant_id": "test_merchant_gstn",
+      "score": -1,
+      "preliminary_score": -1,
+      "status": "not_available",
+      "reason": "No GSTN filings or trade references uploaded. Merchant agent skipped.",
+      "preliminary_reason": "No GSTN filings or trade references uploaded. Merchant agent skipped.",
+      "data_source": "mongodb"
+    },
+    "weights_used": {
+      "psychometric": 0.625,
+      "ecommerce": 0.375
+    },
+    "breakdown": {
+      "ecommerce": {
+        "score": 80,
+        "reason": "Amazon account, mixed payments, 23.4% return rate",
+        "weight_used": 37.5,
+        "consented": true
+      },
+      "psychometric": {
+        "score": 99,
+        "reason": "Strong financial planning mindset and integrity indicators",
+        "weight_used": 62.5,
+        "consented": true
+      }
+    },
+    "final_score": 805
+  }
+}
