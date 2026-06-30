@@ -44,10 +44,8 @@ AGENT_TOOL_PATH: str = os.getenv("AGENT_TOOL_PATH", ".")
 USE_AGENTS: bool     = os.getenv("USE_AGENTS", "true").lower() == "true"
 
 # ── MongoDB Atlas config ──────────────────────────────────────────────────
-MONGODB_URI: str     = os.getenv(
-    "MONGODB_URI",
-    "mongodb+srv://finance_user:Abhi123@cluster0.m3cq5qa.mongodb.net/creditbridge?appName=Cluster0"
-)
+# URI must be set in backend/.env — never hardcode credentials here
+MONGODB_URI: str     = os.getenv("MONGODB_URI", "")
 MONGODB_DB_NAME: str = os.getenv("MONGODB_DB_NAME", "creditbridge")
 
 # ── JWT config ───────────────────────────────────────────────────────────
