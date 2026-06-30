@@ -10,23 +10,23 @@ import os
 import base64
 from datetime import datetime, timedelta
 from typing import Optional
-
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from cryptography.fernet import Fernet
-
 from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_HOURS, DEMO_USERS
+import bcrypt
 
 # --- Password hashing ---
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
+    # Hash a password for the first time
+    # (Using bcrypt, the salt is saved into the hash itself)
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    # Check hashed password. Using bcrypt, the salt is extracted from the hash.
+    try:
+        return bcrypt.checkpw(plain.encode('utf-8'), hashed.encode('utf-8'))
+    except ValueError:
+        return False
 
 
 # --- JWT tokens ---
@@ -90,4 +90,9 @@ def authenticate_demo_user(username: str, password: str) -> Optional[dict]:
         return None
     if user["password"] != password:
         return None
-    return {"username": username, "role": user["role"]}
+    return {
+        "username": username,
+        "role": user["role"],
+        "uid": user.get("uid", username),
+        "name": user.get("name", username.split("@")[0])
+    }
